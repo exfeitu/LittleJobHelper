@@ -8,7 +8,7 @@
 ┌─────────────────────────────────────────────┐
 │              Next.js App Router              │
 │  (app/page.tsx, app/calendar/page.tsx)      │
-└──────────────┬──────────────────────────────┘
+──────────────┬──────────────────────────────┘
                │ 调用
 ┌──────────────▼──────────────────────────────┐
 │          React Components Layer             │
@@ -21,25 +21,56 @@
 ┌──────────────▼──────────────────────────────┐
 │           Data & Utils Layer                │
 │  lib/sample-data.ts (模拟数据源)            │
+│  lib/storage.ts (LocalStorage 持久化)       │
 │  lib/utils.ts (工具函数)                    │
 │  types.ts (TypeScript 类型定义)             │
 └─────────────────────────────────────────────┘
 ```
 
-## 🔄 数据流设计
-
-### 当前阶段(原型)
+### 部署架构图
 
 ```
-用户操作 → 组件状态更新 → 内存数据变更 → UI 重新渲染
+开发环境                    生产环境
+┌──────────────┐         ┌──────────────────────┐
+│  Localhost   │         │  GitHub Pages        │
+│  :10352      │         │  (静态托管)          │
+│              │         │                      │
+│ npm run dev  │         │ npm run build        │
+│              │         │ ↓                    │
+│              │         │ out/ (静态文件)      │
+│              │         │ ↓                    │
+│              │         │ GitHub Actions       │
+│              │         │ ↓                    │
+│              │         │ https://exfeitu.     │
+│              │         │ github.io/           │
+│              │         │ LittleJobHelper/     │
+└──────────────┘         └──────────────────────┘
+```
+
+## 🔄 数据流设计
+
+### 当前阶段(LocalStorage 持久化)
+
+```
+用户操作 → 组件状态更新 → setData() → LocalStorage
+                ↑                          ↓
+          UI 重新渲染 ←────────── 自动同步保存
                 ↑
-         lib/sample-data.ts (只读导入)
+         lib/storage.ts (读写封装)
+                ↑
+         lib/sample-data.ts (初始化数据)
 ```
 
 **特点**:
-- ✅ 快速原型验证
-- ❌ 数据不持久化(刷新丢失)
-- ❌ 无后端 API 交互
+- ✅ 数据持久化到浏览器本地
+- ✅ 支持 JSON 文件导入/导出备份
+- ✅ 无需后端服务器
+-  数据不跨设备同步
+- ❌ 清除浏览器缓存会丢失数据
+
+**存储键名**:
+- `little-job-helper-events` - 事件数据
+- `little-job-helper-todos` - 待办数据
 
 ### 未来阶段(Supabase 集成)
 
@@ -47,6 +78,8 @@
 用户操作 → 组件状态更新 → Supabase API → PostgreSQL 数据库
                 ↓                          ↓
           乐观更新 UI ←────────── 实时订阅推送
+                ↓
+          LocalStorage (离线缓存)
 ```
 
 ## 🧩 核心组件职责
@@ -88,6 +121,20 @@
 
 ### 3. 工具层 (`lib/`)
 
+#### `storage.ts` - 数据持久化层
+```typescript
+// 核心功能
+export function loadEvents(): EventItem[]      // 从 LocalStorage 加载
+export function saveEvents(events: EventItem[]) // 保存到 LocalStorage
+export function exportData(): string            // 导出为 JSON
+export function importData(json: string): void  // 从 JSON 导入
+```
+
+**特性**:
+- 自动同步: 每次数据修改后自动保存
+- 降级策略: LocalStorage 无数据时使用 sample-data.ts
+- 备份支持: JSON 文件导入/导出
+
 #### `sample-data.ts` - 模拟数据源
 ```typescript
 export const sampleEvents: EventItem[] = [...]
@@ -98,7 +145,7 @@ export const sampleDiaries: DiaryEntry[] = [...]
 **用途**:
 - 开发阶段提供完整测试数据
 - 演示数据结构关系(Event ↔ Todo 双向引用)
-- 后续替换为 Supabase Query
+- LocalStorage 为空时的初始化数据
 
 #### `utils.ts` - 纯工具函数
 ```typescript
@@ -127,7 +174,16 @@ interface EventItem {
 interface TodoItem {
   id: string
   linkedEventId?: string    // 关联的 Event ID
+  steps?: TodoStep[]        // 任务步骤列表
+  startTime?: string        // 起始时间
   // ...
+}
+
+interface TodoStep {
+  id: string
+  content: string
+  completed: boolean
+  scheduledTime?: string
 }
 ```
 
@@ -135,6 +191,7 @@ interface TodoItem {
 1. 创建 Event 时若关联 Todo,需同时更新 `TodoItem.linkedEventId`
 2. 删除 Todo 时需从所有 `EventItem.linkedTodoIds` 中移除该 ID
 3. 调用 `syncLinkedItems()` 确保数据一致性
+4. 任务步骤变更时自动保存到 LocalStorage
 
 ## 🎨 样式架构
 
@@ -144,7 +201,7 @@ interface TodoItem {
 // ✅ 推荐:直接在 className 中使用
 <div className="flex items-center gap-2 p-4 bg-white rounded-lg shadow-sm">
 
-// ❌ 禁止:硬编码 style 属性
+//  禁止:硬编码 style 属性
 <div style={{ display: 'flex', padding: '16px' }}>
 ```
 
@@ -181,12 +238,18 @@ interface TodoItem {
 - Next.js 自动代码分割
 - 动态导入重型组件:`const HeavyComponent = dynamic(() => import(...))`
 
-## 🔮 未来扩展方向
+### 4. 构建优化
+- 静态导出: `output: 'export'` 生成纯静态文件
+- 图片优化禁用: `images.unoptimized: true` (适配静态托管)
+- Tree Shaking: 自动移除未使用的代码
 
-### Phase 2: 数据持久化
+##  未来扩展方向
+
+### Phase 2: 云端同步
 - [ ] 集成 Supabase Client
 - [ ] 实现 CRUD API
-- [ ] 添加离线缓存策略
+- [ ] 多设备数据同步
+- [ ] 离线优先策略
 
 ### Phase 3: 实时协作
 - [ ] Supabase Realtime 订阅
@@ -201,4 +264,5 @@ interface TodoItem {
 ---
 
 **最后更新**: 2026-05-27  
-**维护者**: LittleJobHelper 团队
+**维护者**: LittleJobHelper 团队  
+**在线演示**: https://exfeitu.github.io/LittleJobHelper/

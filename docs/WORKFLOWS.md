@@ -44,7 +44,7 @@ main          - 生产环境稳定版本
 
 #### 完整示例
 
-```bash
+```
 feat(todo-tree): 实现拖拽排序功能
 
 - 添加 react-beautiful-dnd 依赖
@@ -121,18 +121,77 @@ npm run dev
 
 ```bash
 # 1. 清理旧构建
-rm -rf .next
+rm -rf .next out
 
-# 2. 构建生产版本
+# 2. 构建生产版本(生成静态文件到 out/ 目录)
 npm run build
 
-# 3. 本地预览(可选)
-npm start
+# 3. 本地预览静态文件
+npx serve out -l 8080
 
-# 4. 部署 .next 目录到服务器
+# 4. 访问 http://localhost:8080
 ```
 
-### Vercel 部署(推荐)
+### GitHub Pages 部署(当前方案)
+
+#### 自动部署流程
+
+```bash
+# 1. 修改代码
+# ... 你的开发工作 ...
+
+# 2. 提交并推送
+git add .
+git commit -m "feat: 描述你的修改"
+git push origin master
+
+# 3. GitHub Actions 自动触发(约 2-3 分钟)
+# 查看进度: https://github.com/exfeitu/LittleJobHelper/actions
+
+# 4. 访问线上版本
+# https://exfeitu.github.io/LittleJobHelper/
+```
+
+#### 首次部署配置(仅需一次)
+
+1. **访问仓库设置**: https://github.com/exfeitu/LittleJobHelper/settings/pages
+2. **启用 GitHub Pages**:
+   - Source: 选择 **GitHub Actions**
+   - 保存即可
+3. **验证部署**:
+   - 访问 Actions 标签查看部署状态
+   - 确认网站可正常访问
+
+#### 关键配置文件
+
+**.nojekyll** (必须存在)
+- 位置: 项目根目录
+- 作用: 防止 GitHub Pages 使用 Jekyll 处理静态文件
+- 内容: 空文件即可
+
+**next.config.mjs**
+```javascript
+{
+  output: 'export',           // 启用静态导出
+  images: { unoptimized: true } // 禁用图片优化
+}
+```
+
+**注意**: 
+- ❌ 不要使用 `basePath` 配置,Next.js 会自动处理 GitHub Pages 子路径
+- ✅ 确保 `.github/workflows/deploy.yml` 中 Node.js 版本 >= 20.9.0
+
+#### 常见问题排查
+
+| 问题 | 解决方案 |
+|------|---------|
+| 页面显示 404 | 检查 URL 是否正确,等待 5 分钟让 CDN 刷新 |
+| 样式加载失败 | 按 F12 查看控制台错误,确认资源路径正确 |
+| Actions 运行失败 | 查看 Actions 日志,检查 TypeScript 错误 |
+| Node.js 版本错误 | 确保 workflow 中使用 Node.js 20+ |
+| 数据丢失 | LocalStorage 是浏览器级别存储,清除缓存会丢失 |
+
+### Vercel 部署(备选方案)
 
 ```bash
 # 1. 安装 Vercel CLI
