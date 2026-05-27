@@ -101,6 +101,7 @@ export const sampleTodos: TodoItem[] = [
   {
     id: "todo-1",
     title: "准备职级晋升报审材料",
+    startTime: "2026-04-11T09:00:00",
     dueDate: "2026-04-13T17:30:00",
     priority: "high",
     status: "in_progress",
@@ -111,19 +112,34 @@ export const sampleTodos: TodoItem[] = [
     parentId: null,
     pinnedToToday: true,
     linkedEventIds: ["event-1", "event-2", "event-3"],
+    steps: [
+      { id: "step-1-1", content: "收集近三年考核结果", completed: true },
+      { id: "step-1-2", content: "整理任职年限证明材料", completed: true },
+      { id: "step-1-3", content: "填写晋升审批表", completed: false },
+      { id: "step-1-4", content: "找领导签字盖章", completed: false },
+      { id: "step-1-5", content: "提交组织部审核", completed: false },
+    ],
   },
   {
     id: "todo-2",
     title: "整理近三年考核结果附件",
+    startTime: "2026-04-11T10:30:00",
     priority: "medium",
     status: "completed",
     tags: ["附件"],
     parentId: "todo-1",
     linkedEventIds: ["event-3"],
+    steps: [
+      { id: "step-2-1", content: "查找2023年考核表", completed: true },
+      { id: "step-2-2", content: "查找2024年考核表", completed: true },
+      { id: "step-2-3", content: "查找2025年考核表", completed: true },
+      { id: "step-2-4", content: "扫描并归档", completed: true },
+    ],
   },
   {
     id: "todo-3",
     title: "补充任职年限证明",
+    startTime: "2026-04-12T14:00:00",
     priority: "high",
     status: "pending",
     tags: ["证明"],
@@ -132,6 +148,11 @@ export const sampleTodos: TodoItem[] = [
     remarks: "需同步电子版到工作群。",
     parentId: "todo-1",
     linkedEventIds: ["event-1"],
+    steps: [
+      { id: "step-3-1", content: "联系档案室查询原始记录", completed: false },
+      { id: "step-3-2", content: "开具任职年限证明", completed: false },
+      { id: "step-3-3", content: "发送电子版到工作群", completed: false },
+    ],
   },
   {
     id: "todo-6",
@@ -144,6 +165,7 @@ export const sampleTodos: TodoItem[] = [
   {
     id: "todo-4",
     title: "报送编制调整建议表",
+    startTime: "2026-04-13T09:00:00",
     dueDate: "2026-04-14T11:00:00",
     priority: "medium",
     status: "pending",
@@ -153,10 +175,17 @@ export const sampleTodos: TodoItem[] = [
     remarks: "会后统一提交扫描件。",
     parentId: null,
     linkedEventIds: ["event-10"],
+    steps: [
+      { id: "step-4-1", content: "汇总各部门编制需求", completed: false },
+      { id: "step-4-2", content: "分析现有编制使用情况", completed: false },
+      { id: "step-4-3", content: "制定调整方案", completed: false },
+      { id: "step-4-4", content: "提交编办审批", completed: false },
+    ],
   },
   {
     id: "todo-5",
     title: "联系宣传部确认先进事迹发布时间",
+    startTime: "2026-04-12T15:00:00",
     dueDate: "2026-04-13T16:00:00",
     priority: "low",
     status: "completed",
@@ -166,10 +195,16 @@ export const sampleTodos: TodoItem[] = [
     remarks: "先电话沟通，再发正式稿。",
     parentId: null,
     linkedEventIds: ["event-6"],
+    steps: [
+      { id: "step-5-1", content: "电话联系赵编辑", completed: true },
+      { id: "step-5-2", content: "确认发布时间和要求", completed: true },
+      { id: "step-5-3", content: "准备先进事迹稿件", completed: true },
+    ],
   },
   {
     id: "todo-7",
     title: "补发人社局工资审批清单",
+    startTime: "2026-04-13T14:00:00",
     dueDate: "2026-04-13T18:00:00",
     priority: "high",
     status: "pending",
@@ -180,6 +215,12 @@ export const sampleTodos: TodoItem[] = [
     parentId: null,
     pinnedToToday: true,
     linkedEventIds: ["event-7"],
+    steps: [
+      { id: "step-7-1", content: "核对工资审批数据", completed: false },
+      { id: "step-7-2", content: "生成审批清单Excel", completed: false },
+      { id: "step-7-3", content: "发送电子版给李科长", completed: false },
+      { id: "step-7-4", content: "打印并报送纸质版", completed: false },
+    ],
   }
 ];
 

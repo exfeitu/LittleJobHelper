@@ -28,6 +28,8 @@ export default function HomePage() {
   const [contactFilter, setContactFilter] = useState<string>("全部联系人");
   const [searchQuery, setSearchQuery] = useState("");
   const [form, setForm] = useState(defaultForm);
+  const [showAddTaskForm, setShowAddTaskForm] = useState(false);
+  const [showAllTodos, setShowAllTodos] = useState(false);
 
   const departmentChoices = useMemo(
     () => ["全部部门", ...Array.from(new Set([...departmentOptions, ...getFilterValues(todos, "department")]))],
@@ -140,18 +142,138 @@ export default function HomePage() {
           </div>
         </header>
 
-        <section className="panel section-card timeline-panel timeline-panel-clean">
-          <div className="section-head section-head-tight">
-            <div>
-              <h2>时间轴</h2>
-              <p className="timeline-note">在时间轴区域滚轮可直接放缩；任务过密时会自动避让并压缩为标题。</p>
-            </div>
-          </div>
-          <DayTimeline events={events} linkedTodoTitles={linkedTodoTitles} />
-        </section>
-
         <div className="content-layout simple-layout">
           <section className="content-main">
+            <section className="grid overview-grid">
+              <article className="panel section-card">
+                <div className="section-head section-head-tight">
+                  <div>
+                    <h2>今日待办</h2>
+                  </div>
+                  <button 
+                    className="ghost-button" 
+                    type="button"
+                    onClick={() => setShowAddTaskForm(!showAddTaskForm)}
+                  >
+                    {showAddTaskForm ? "收起表单" : "+ 添加任务"}
+                  </button>
+                </div>
+                <div className="focus-list">
+                  {todayFocus.length > 0 ? (
+                    todayFocus.map((item) => (
+                      <div key={item.id} className="focus-item" style={{ 
+                        padding: '16px', 
+                        marginBottom: '12px', 
+                        background: 'var(--card-bg)', 
+                        border: '1px solid var(--border-color)',
+                        borderRadius: '8px',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'flex-start',
+                        gap: '16px'
+                      }}>
+                        <div style={{ flex: 1 }}>
+                          <h3 style={{ margin: '0 0 6px 0', fontSize: '1rem', color: 'var(--text)' }}>{item.title}</h3>
+                          <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--muted)' }}>
+                            {item.department ?? "未指定部门"} · {item.contactPerson ?? "未指定联系人"}
+                          </p>
+                        </div>
+                        <div className="focus-meta" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '6px', flexShrink: 0 }}>
+                          <span className={`priority priority-${item.priority}`} style={{ fontSize: '0.75rem' }}>{item.priority}</span>
+                          <strong style={{ fontSize: '0.85rem', color: 'var(--text)' }}>{formatDateTime(item.dueDate)}</strong>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div style={{ padding: '24px', textAlign: 'center', color: 'var(--muted)' }}>
+                      <p>暂无今日待办</p>
+                    </div>
+                  )}
+                </div>
+                
+                {showAddTaskForm && (
+                  <div className="task-form" style={{ marginTop: "16px", paddingTop: "16px", borderTop: "1px solid var(--border-color)" }}>
+                    <h3 style={{ fontSize: "14px", marginBottom: "12px", color: "var(--text-secondary)" }}>新建任务</h3>
+                    <input
+                      value={form.title}
+                      onChange={(event) => setForm((value) => ({ ...value, title: event.target.value }))}
+                      placeholder="任务标题"
+                    />
+                    <input
+                      type="datetime-local"
+                      value={form.dueDate}
+                      onChange={(event) => setForm((value) => ({ ...value, dueDate: event.target.value }))}
+                    />
+                    <div className="task-form-grid">
+                      <select value={form.priority} onChange={(event) => setForm((value) => ({ ...value, priority: event.target.value as Priority }))}>
+                        <option value="high">高优先级</option>
+                        <option value="medium">中优先级</option>
+                        <option value="low">低优先级</option>
+                      </select>
+                      <select value={form.status} onChange={(event) => setForm((value) => ({ ...value, status: event.target.value as TodoStatus }))}>
+                        <option value="pending">未开始</option>
+                        <option value="in_progress">进行中</option>
+                        <option value="completed">已完成</option>
+                        <option value="cancelled">已取消</option>
+                      </select>
+                    </div>
+                    <input
+                      value={form.department}
+                      onChange={(event) => setForm((value) => ({ ...value, department: event.target.value }))}
+                      placeholder="部门"
+                    />
+                    <input
+                      value={form.contactPerson}
+                      onChange={(event) => setForm((value) => ({ ...value, contactPerson: event.target.value }))}
+                      placeholder="联系人"
+                    />
+                    <input
+                      value={form.tags}
+                      onChange={(event) => setForm((value) => ({ ...value, tags: event.target.value }))}
+                      placeholder="标签，逗号分隔"
+                    />
+                    <select
+                      multiple
+                      value={form.linkedEventIds}
+                      onChange={(event) =>
+                        setForm((value) => ({
+                          ...value,
+                          linkedEventIds: Array.from(event.target.selectedOptions, (option) => option.value),
+                        }))
+                      }
+                    >
+                      {availableEventOptions.map((event) => (
+                        <option key={event.id} value={event.id}>
+                          {event.title}
+                        </option>
+                      ))}
+                    </select>
+                    <textarea
+                      value={form.remarks}
+                      onChange={(event) => setForm((value) => ({ ...value, remarks: event.target.value }))}
+                      placeholder="备注"
+                      rows={4}
+                    />
+                    <button className="ghost-button add-task-button" type="button" onClick={handleAddTask}>
+                      确认添加
+                    </button>
+                  </div>
+                )}
+              </article>
+            </section>
+
+            <section className="grid overview-grid">
+              <article className="panel section-card">
+                <div className="section-head section-head-tight">
+                  <div>
+                    <h2>时间轴</h2>
+                    <p className="timeline-note">在时间轴区域滚轮可直接放缩；任务过密时会自动避让并压缩为标题。</p>
+                  </div>
+                </div>
+                <DayTimeline events={events} linkedTodoTitles={linkedTodoTitles} />
+              </article>
+            </section>
+
             <section className="grid overview-grid">
               <article className="panel section-card">
                 <div className="section-head section-head-tight">
@@ -164,18 +286,9 @@ export default function HomePage() {
                 </div>
                 <DiaryTimeline events={todayRecords} />
               </article>
-
-              <article className="panel section-card">
-                <div className="section-head section-head-tight">
-                  <div>
-                    <h2>搜索结果</h2>
-                  </div>
-                </div>
-                <SearchPanel results={searchResults} query={searchQuery} onQueryChange={setSearchQuery} />
-              </article>
             </section>
 
-            <section className="grid bottom-grid">
+            <section className="grid overview-grid">
               <article className="panel section-card">
                 <div className="section-head section-head-tight">
                   <div>
@@ -198,108 +311,34 @@ export default function HomePage() {
                     </select>
                   </div>
                 </div>
-                <TodoTree nodes={todoTree} linkedEventTitles={linkedEventTitles} />
-              </article>
+              <TodoTree nodes={todoTree} linkedEventTitles={linkedEventTitles} maxDisplay={showAllTodos ? undefined : 3} />
+              {todoTree.length > 3 && (
+                <button 
+                  className="ghost-button" 
+                  type="button"
+                  onClick={() => setShowAllTodos(!showAllTodos)}
+                  style={{ marginTop: '12px', width: '100%' }}
+                >
+                  {showAllTodos ? "收起" : `展开全部 (${todoTree.length} 个任务)`}
+                </button>
+              )}
+            </article>
+            </section>
 
+            <section className="grid overview-grid">
               <article className="panel section-card">
                 <div className="section-head section-head-tight">
                   <div>
-                    <h2>手动添加任务</h2>
+                    <h2>搜索结果</h2>
                   </div>
                 </div>
-                <div className="task-form">
-                  <input
-                    value={form.title}
-                    onChange={(event) => setForm((value) => ({ ...value, title: event.target.value }))}
-                    placeholder="任务标题"
-                  />
-                  <input
-                    type="datetime-local"
-                    value={form.dueDate}
-                    onChange={(event) => setForm((value) => ({ ...value, dueDate: event.target.value }))}
-                  />
-                  <div className="task-form-grid">
-                    <select value={form.priority} onChange={(event) => setForm((value) => ({ ...value, priority: event.target.value as Priority }))}>
-                      <option value="high">高优先级</option>
-                      <option value="medium">中优先级</option>
-                      <option value="low">低优先级</option>
-                    </select>
-                    <select value={form.status} onChange={(event) => setForm((value) => ({ ...value, status: event.target.value as TodoStatus }))}>
-                      <option value="pending">未开始</option>
-                      <option value="in_progress">进行中</option>
-                      <option value="completed">已完成</option>
-                      <option value="cancelled">已取消</option>
-                    </select>
-                  </div>
-                  <input
-                    value={form.department}
-                    onChange={(event) => setForm((value) => ({ ...value, department: event.target.value }))}
-                    placeholder="部门"
-                  />
-                  <input
-                    value={form.contactPerson}
-                    onChange={(event) => setForm((value) => ({ ...value, contactPerson: event.target.value }))}
-                    placeholder="联系人"
-                  />
-                  <input
-                    value={form.tags}
-                    onChange={(event) => setForm((value) => ({ ...value, tags: event.target.value }))}
-                    placeholder="标签，逗号分隔"
-                  />
-                  <select
-                    multiple
-                    value={form.linkedEventIds}
-                    onChange={(event) =>
-                      setForm((value) => ({
-                        ...value,
-                        linkedEventIds: Array.from(event.target.selectedOptions, (option) => option.value),
-                      }))
-                    }
-                  >
-                    {availableEventOptions.map((event) => (
-                      <option key={event.id} value={event.id}>
-                        {event.title}
-                      </option>
-                    ))}
-                  </select>
-                  <textarea
-                    value={form.remarks}
-                    onChange={(event) => setForm((value) => ({ ...value, remarks: event.target.value }))}
-                    placeholder="备注"
-                    rows={4}
-                  />
-                  <button className="ghost-button add-task-button" type="button" onClick={handleAddTask}>
-                    添加任务
-                  </button>
-                </div>
+                <SearchPanel results={searchResults} query={searchQuery} onQueryChange={setSearchQuery} />
               </article>
             </section>
           </section>
 
           <aside className="right-rail panel">
-            <section className="rail-section">
-              <div className="section-head section-head-tight compact-head">
-                <div>
-                  <h2>今日待办</h2>
-                </div>
-              </div>
-              <div className="focus-list rail-list">
-                {todayFocus.map((item) => (
-                  <div key={item.id} className="focus-item rail-item">
-                    <div>
-                      <h3>{item.title}</h3>
-                      <p>
-                        {item.department ?? "未指定部门"} · {item.contactPerson ?? "未指定联系人"}
-                      </p>
-                    </div>
-                    <div className="focus-meta">
-                      <span className={`priority priority-${item.priority}`}>{item.priority}</span>
-                      <strong>{formatDateTime(item.dueDate)}</strong>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </section>
+            {/* 右侧边栏预留 */}
           </aside>
         </div>
       </section>

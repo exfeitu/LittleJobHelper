@@ -11,9 +11,17 @@ export type EventItem = {
   linkedTodoIds?: string[];
 };
 
+export type TodoStep = {
+  id: string;
+  content: string;
+  completed: boolean;
+  scheduledTime?: string;
+};
+
 export type TodoItem = {
   id: string;
   title: string;
+  startTime?: string;
   dueDate?: string;
   priority: Priority;
   status: TodoStatus;
@@ -24,6 +32,7 @@ export type TodoItem = {
   parentId: string | null;
   pinnedToToday?: boolean;
   linkedEventIds?: string[];
+  steps?: TodoStep[];
 };
 
 export type TodoTreeNode = TodoItem & {
