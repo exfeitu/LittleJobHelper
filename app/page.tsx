@@ -1,13 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { DayTimeline } from "@/components/day-timeline";
 import { DiaryTimeline } from "@/components/diary-timeline";
 import { SearchPanel } from "@/components/search-panel";
 import { TodoTree } from "@/components/todo-tree";
 import { departmentOptions, sampleEvents, sampleSearchResults, sampleTodos } from "@/lib/sample-data";
 import { buildTodoTree, exportRows, formatDateTime, getFilterValues, getTodayFocus, syncLinkedItems, toJsonBlock } from "@/lib/utils";
+import { loadEventsFromStorage, loadTodosFromStorage, saveEventsToStorage, saveTodosToStorage, exportDataAsFile, importDataFromFile } from "@/lib/storage";
 import { EventItem, Priority, SearchResult, TodoItem, TodoStatus } from "@/types";
 
 const defaultForm = {
@@ -23,13 +24,36 @@ const defaultForm = {
 };
 
 export default function HomePage() {
-  const [{ events, todos }, setData] = useState(() => syncLinkedItems(sampleEvents, sampleTodos));
+  const [isInitialized, setIsInitialized] = useState(false);
+  const [{ events, todos }, setData] = useState(() => {
+    const storedEvents = loadEventsFromStorage();
+    const storedTodos = loadTodosFromStorage();
+    
+    if (storedEvents && storedTodos) {
+      return syncLinkedItems(storedEvents, storedTodos);
+    }
+    
+    return syncLinkedItems(sampleEvents, sampleTodos);
+  });
+  
+  useEffect(() => {
+    setIsInitialized(true);
+  }, []);
+
+  useEffect(() => {
+    if (isInitialized) {
+      saveEventsToStorage(events);
+      saveTodosToStorage(todos);
+    }
+  }, [events, todos, isInitialized]);
+
   const [departmentFilter, setDepartmentFilter] = useState<string>("全部部门");
   const [contactFilter, setContactFilter] = useState<string>("全部联系人");
   const [searchQuery, setSearchQuery] = useState("");
   const [form, setForm] = useState(defaultForm);
   const [showAddTaskForm, setShowAddTaskForm] = useState(false);
   const [showAllTodos, setShowAllTodos] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
 
   const departmentChoices = useMemo(
     () => ["全部部门", ...Array.from(new Set([...departmentOptions, ...getFilterValues(todos, "department")]))],
@@ -116,6 +140,36 @@ export default function HomePage() {
     setForm(defaultForm);
   };
 
+  const handleExportData = () => {
+    exportDataAsFile(events, todos);
+  };
+
+  const handleImportData = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    
+    try {
+      setImportError(null);
+      const { events: importedEvents, todos: importedTodos } = await importDataFromFile(file);
+      const synced = syncLinkedItems(importedEvents, importedTodos);
+      setData(synced);
+      alert("数据导入成功！");
+    } catch (error) {
+      setImportError(error instanceof Error ? error.message : "导入失败");
+    } finally {
+      event.target.value = "";
+    }
+  };
+
+  const handleClearData = () => {
+    if (confirm("确定要清空所有数据吗？此操作不可恢复！")) {
+      const cleared = syncLinkedItems([], []);
+      setData(cleared);
+      localStorage.removeItem("little-job-helper-events");
+      localStorage.removeItem("little-job-helper-todos");
+    }
+  };
+
   return (
     <main className="app-shell">
       <section className="workspace-simple">
@@ -144,6 +198,60 @@ export default function HomePage() {
 
         <div className="content-layout simple-layout">
           <section className="content-main">
+            <section className="grid overview-grid">
+              <article className="panel section-card">
+                <div className="section-head section-head-tight">
+                  <div>
+                    <h2>数据管理</h2>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handleExportData}
+                      className="ghost-button"
+                      type="button"
+                    >
+                      📥 导出数据
+                    </button>
+                    <label className="ghost-button cursor-pointer" style={{ margin: 0 }}>
+                      📤 导入数据
+                      <input
+                        type="file"
+                        accept=".json"
+                        onChange={handleImportData}
+                        style={{ display: 'none' }}
+                      />
+                    </label>
+                    <button
+                      onClick={handleClearData}
+                      className="ghost-button"
+                      type="button"
+                      style={{ color: '#dc2626' }}
+                    >
+                      🗑️ 清空数据
+                    </button>
+                  </div>
+                </div>
+                
+                {importError && (
+                  <div style={{ 
+                    marginBottom: '12px', 
+                    padding: '8px 12px', 
+                    background: '#fef2f2', 
+                    border: '1px solid #fecaca', 
+                    borderRadius: '6px',
+                    color: '#dc2626',
+                    fontSize: '0.875rem'
+                  }}>
+                    ❌ {importError}
+                  </div>
+                )}
+                
+                <p style={{ fontSize: '0.875rem', color: 'var(--muted)' }}>
+                  💡 数据自动保存到浏览器本地存储。您可以导出为 JSON 文件备份，或从备份文件导入。
+                </p>
+              </article>
+            </section>
+
             <section className="grid overview-grid">
               <article className="panel section-card">
                 <div className="section-head section-head-tight">

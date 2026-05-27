@@ -1,4 +1,3 @@
-import { sampleEvents, sampleTodos } from "@/lib/sample-data";
 import { EventItem, Priority, TodoItem, TodoStatus, TodoTreeNode } from "@/types";
 
 export function syncLinkedItems(events: EventItem[], todos: TodoItem[]) {
@@ -154,7 +153,7 @@ export function getFilterValues(items: TodoItem[], key: "department" | "contactP
   ).sort((a, b) => a.localeCompare(b, "zh-CN"));
 }
 
-export function exportRows(events: EventItem[] = sampleEvents, todos: TodoItem[] = sampleTodos) {
+export function exportRows(events: EventItem[] = [], todos: TodoItem[] = []) {
   return {
     events: events.map((event) => ({
       日期: event.startTime.slice(0, 10),
