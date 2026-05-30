@@ -1,135 +1,221 @@
-# 🤖 LittleJobHelper AI 开发上下文
+# AGENTS.md — Little Job Helper
 
-> **重要**: 每次对话前,AI 必须阅读此文件以理解项目结构、技术栈和开发规范。
+## 项目身份
 
-## 🎯 项目定位
+体制内人事科办公助手：单人使用的浏览器端工作回溯 + 待办管理工具。核心能力：精确到秒的时间轴记录、多级任务树、跨事件与待办的全局搜索。
 
-轻量级日程/任务/日记管理 Web 应用,面向体制内人事工作场景。**当前为纯前端原型阶段**,数据已实现 LocalStorage 持久化,支持 GitHub Pages 静态部署。
+## 技术栈
 
-**核心价值**: 提供工作回溯、待办事项管理及日程记录的 AI 驱动基础框架。
+| 层 | 选型 | 备注 |
+|---|---|---|
+| 框架 | Next.js 16 (App Router) | `output: 'export'` 静态导出 |
+| 语言 | TypeScript 5.8 | strict 模式 |
+| 样式 | 手写 CSS | `globals.css`，约 1055 行，CSS 自定义属性 |
+| 存储 | 浏览器 LocalStorage | 两个 key，无数据库 |
+| 部署 | GitHub Pages | `.github/workflows/deploy.yml` |
+| 包管理 | npm | `package-lock.json` |
+| Lint | ESLint 8 | `next/core-web-vitals` |
 
-**部署状态**: ✅ 已配置 GitHub Actions 自动部署到 GitHub Pages
+**本项目没有**：数据库、后端服务、用户认证、CSS 框架（无 Tailwind）、组件库（无 MUI/Ant Design）、自动化测试（无 Jest/Vitest）、SSR、API Routes、Middleware。
 
-##  目录职责(AI 必须遵守)
+> 没有的东西和有的东西同等重要。不要擅自引入上述任何一项。
 
-| 路径 | 职责 | 约束 |
-|------|------|------|
-| `app/` | Next.js App Router 页面路由 | 每个目录对应一个路由,页面组件需声明 `"use client"` (若含状态) |
-| `components/` | 可复用 UI 组件 | 严禁直接包含业务数据获取逻辑,仅接收 props |
-| `lib/` | 工具函数、数据模拟、状态同步 | `storage.ts` 负责数据持久化,`utils.ts` 存放纯函数 |
-| `types.ts` | 全局 TypeScript 类型定义 | 所有新增字段必须先在此声明类型 |
-| `docs/` | 需求、规范、AI 开发指南 | 不引入业务代码,仅供人类/AI 阅读 |
-| `.github/workflows/` | CI/CD 自动化部署 | `deploy.yml` 配置 GitHub Pages 自动部署流程 |
-| `out/` | 静态构建产物 | `npm run build` 生成,用于生产环境部署 |
+## 配置文件速览
 
-## ⚙️ 技术栈与强制约束
+| 文件 | 关键约束 |
+|---|---|
+| `next.config.mjs` | `output: 'export'` → 禁用 SSR/API Routes/Middleware/Image Optimization |
+| `tsconfig.json` | `strict: true`，路径别名 `@/*` 映射到项目根目录 |
+| `.eslintrc.json` | 继承 `next/core-web-vitals` |
+| `.github/workflows/deploy.yml` | push `master` → 构建 → 部署 GitHub Pages |
+| `package.json` | 开发端口 `10352`（`next dev -p 10352`） |
 
-### 核心技术
-- **框架**: Next.js 16.2.6 (App Router) + React 18.3.1
-- **语言**: TypeScript 5.8.3 (**严格模式**,禁止 `any`)
-- **样式**: Tailwind CSS + CSS Modules (禁止全局 CSS 污染)
-- **日期处理**: `date-fns` (禁止硬拼 `T00:00:00` 等字符串)
+## 常用命令
 
-### 状态管理
-- **简单场景**: `useState` + `useMemo`
-- **复杂跨组件**: 计划使用 Zustand (`lib/store/`,尚未实现)
-- **当前阶段**: 所有状态在页面组件内部管理
-
-### 数据流
-- **读取**: 优先从 `lib/storage.ts` 的 LocalStorage 读取,若无则使用 `lib/sample-data.ts` 示例数据
-- **写入**: 自动保存到 LocalStorage,支持 JSON 文件导入/导出备份
-- **同步**: 新增 Event/Todo 时必须调用 `syncLinkedItems()` 保持双向引用
-
-### 构建与部署
-- **本地开发**: `npm run dev` (端口 10352)
-- **生产构建**: `npm run build` → 生成 `out/` 目录静态文件
-- **GitHub Pages**: push 到 `master` 分支自动触发部署
-- **访问地址**: `https://exfeitu.github.io/LittleJobHelper/`
-
-##  常见陷阱(AI 生成代码时必须规避)
-
-1. **忘记双向同步**: 修改 `EventItem` 或 `TodoItem` 后未调用 `syncLinkedItems()`
-2. **服务端/客户端混淆**: 含 `useState`/事件处理的组件缺少 `"use client"` 指令
-3. **表单状态残留**: 提交后未重置 `form` 状态导致视图不刷新
-4. **空列表无提示**: 未显示 `<p className="empty-note">暂无数据</p>` 占位
-5. **类型缺失**: 新增接口未在 `types.ts` 中声明,或使用 `any` 绕过检查
-6. **忽略持久化**: 修改数据后未通过 `setData()` 更新状态,导致 LocalStorage 不同步
-7. **basePath 配置错误**: 静态导出时不要使用 `basePath`,否则会导致资源路径不匹配
-8. **Node.js 版本问题**: CI 环境必须使用 Node.js >= 20.9.0,否则构建失败
-
-## 📌 工作流约定
-
-### 生成代码前
-1. 阅读 `docs/CONVENTIONS.md` 了解编码规范
-2. 查阅 `types.ts` 确认现有类型定义
-3. 参考 `lib/sample-data.ts` 理解数据结构
-4. 查看 `lib/storage.ts` 了解持久化机制
-
-### 修改状态逻辑时
-- 必须同步更新 `types.ts` 中的对应接口
-- 确保所有相关组件的 props 类型一致
-- 数据修改后通过 `setData()` 触发自动保存
-
-### 提交前检查
 ```bash
-npm run lint        # ESLint 检查
-npm run build       # TypeScript 编译验证 + 静态导出
+npm install          # 安装依赖
+npm run dev          # localhost:10352（端口在 package.json 中硬编码）
+npm run build        # 静态导出到 out/
+npm run lint         # ESLint
 ```
 
-### 部署流程
-```bash
-# 1. 本地测试
-npm run build
-npx serve out -l [端口]
+## 目录结构
 
-# 2. 提交代码
-git add .
-git commit -m "描述修改内容"
-git push origin master
-
-# 3. GitHub Actions 自动部署(约 2-3 分钟)
-# 访问: https://exfeitu.github.io/LittleJobHelper/
+```
+.eslintrc.json              # ESLint 配置
+next.config.mjs             # Next.js 配置（静态导出 + 图片不优化）
+tsconfig.json               # TypeScript 配置（strict，路径别名 @/*）
+types.ts                    # 全局类型：EventItem, TodoItem, TodoTreeNode 等
+app/
+  layout.tsx                # 根布局：lang="zh-CN"，导入 globals.css
+  globals.css               # 全部样式（CSS 变量 + 手写类，无 Tailwind）
+  page.tsx                  # 首页（"use client"）：数据管理、今日待办、时间轴、日记、待办树、搜索
+  calendar/
+    page.tsx                # 日历页（"use client"）：按天查看日程/待办 + 添加日程表单
+components/
+  day-timeline.tsx          # 多天纵向时间轴（缩放 0.32x~5.2x、左右避让、紧凑卡片）
+  diary-timeline.tsx        # 文字日记时间轴（按时间段展示工作记录）
+  search-panel.tsx          # 搜索结果面板（类型筛选项 + 关键词匹配）
+  todo-tree.tsx             # 递归待办树（status 状态提升、step 进度展示）
+lib/
+  storage.ts                # 副作用函数：LocalStorage 读写、JSON 文件导入/导出
+  utils.ts                  # 纯函数：双向关联同步、树构建、排序、格式化
+  sample-data.ts            # 开发用示例数据（11 事件 + 7 待办），仅当 LocalStorage 为空时使用
+.github/workflows/
+  deploy.yml                # CI/CD：checkout → npm ci → npm run build → deploy-pages
 ```
 
-##  按需加载的子文档
+## 核心类型
 
-当需要详细信息时,AI 应通过 `@文件名` 引用以下文档:
+所有类型定义在 `types.ts`，是项目的数据契约。
 
-- `@docs/ARCHITECTURE.md` - 系统架构、组件交互、数据流设计
-- `@docs/CONVENTIONS.md` - 命名规范、组件结构、注释要求
-- `@docs/WORKFLOWS.md` - Git 提交规范、测试流程、部署步骤
-- `@docs/DATA_STORAGE.md` - 数据持久化方案详解
-- `@docs/TESTING_GUIDE.md` - LocalStorage 功能测试指南
-- `@DEPLOY_GUIDE.md` - GitHub Pages 完整部署指南
-- `@DEPLOY_CHECKLIST.md` - 部署快速检查清单
-
-## 📦 关键配置文件说明
-
-### `next.config.mjs`
-```javascript
-{
-  output: 'export',           // 启用静态导出
-  images: { unoptimized: true } // 禁用图片优化(静态托管不支持)
+```typescript
+EventItem {
+  id: string; startTime: string; endTime: string; title: string;
+  detail?: string; tags: string[]; linkedTodoIds?: string[];
 }
+TodoItem {
+  id: string; title: string; startTime?: string; dueDate?: string;
+  priority: "high" | "medium" | "low"; status: "pending" | "in_progress" | "completed" | "cancelled";
+  tags: string[]; department?: string; contactPerson?: string; remarks?: string;
+  parentId: string | null; pinnedToToday?: boolean;
+  linkedEventIds?: string[]; steps?: TodoStep[];
+}
+TodoTreeNode extends TodoItem { children: TodoTreeNode[]; computedStatus: TodoStatus }
+TodoStep { id: string; content: string; completed: boolean; scheduledTime?: string }
+SearchResult { id: string; kind: "event" | "todo"; title: string; snippet: string; dateLabel: string; tags: string[] }
 ```
 
-**注意**: 
-- ❌ 不要使用 `basePath` 配置,Next.js 会自动处理 GitHub Pages 子路径
-- ✅ 必须设置 `output: 'export'` 才能生成静态文件
+**关键约束**：Event ↔ Todo 通过 `linkedTodoIds` ↔ `linkedEventIds` 双向关联。任何修改关联关系的操作都必须经过 `syncLinkedItems()`（位于 `lib/utils.ts`）来保持两端一致，否则会出现悬空引用。
 
-### `.github/workflows/deploy.yml`
-- **触发条件**: push 到 `master` 分支或手动触发
-- **Node.js 版本**: 20.x (必须 >= 20.9.0)
-- **构建命令**: `npm ci && npm run build`
-- **部署方式**: `actions/deploy-pages@v4`
+## 架构模式
 
-### `.nojekyll`
-- **作用**: 防止 GitHub Pages 使用 Jekyll 处理静态文件
-- **位置**: 项目根目录(必须存在)
+### 数据流（读 + 写）
 
-##  最后更新
+```
+读取：
+  LocalStorage.getItem() ──有数据──→ useState 初始化
+         │                                  │
+          └──无数据──→ sample-data.ts ──────┘
+                              │
+                    syncLinkedItems(events, todos)   ← 双向关联同步
+                              │
+                    ┌─────────┼──────────┐
+                    ↓         ↓          ↓
+              filteredTodos  events   searchResults
+                    ↓
+              buildTodoTree()
+                    ↓
+              getTodayFocus()
+                    ↓
+              组件渲染（所有派生计算通过 useMemo）
 
-- **版本**: v1.2.0 (新增 GitHub Pages 部署配置)
-- **更新日期**: 2026-05-27
-- **维护者**: LittleJobHelper 团队
-- **在线演示**: https://exfeitu.github.io/LittleJobHelper/
+写回：
+  用户操作 → setData() → syncLinkedItems() → useState 更新
+                                              │
+  useEffect（isInitialized 守卫为 true 时）→ LocalStorage.setItem()
+```
+
+**isInitialized 守卫的作用**：防止组件首次挂载时将 sample data 覆盖进 LocalStorage。在 `isInitialized` 变为 `true` 之前，useEffect 不会执行写回。
+
+### 组件约定
+
+- 所有组件文件以 `"use client"` 开头 — 因为静态导出无 SSR，服务端渲染没有意义
+- 组件 Props 类型定义在组件文件内部（不放入 `types.ts`），用 `type` 而非 `interface`
+- 状态集中在 `page.tsx` 管理，子组件纯展示 + 回调 — 原因：数据变更需要统一经过 `syncLinkedItems` + 写回 LocalStorage
+- 派生数据全部用 `useMemo` — 避免每次渲染重新构建树、排序、过滤
+
+### CSS 约定
+
+- 颜色/间距等令牌使用 CSS 自定义属性：`var(--text)`, `var(--muted)`, `var(--border-color)` 等，定义在 `globals.css` 的 `:root` 中
+- 类名语义化：`.line-timeline`, `.todo-card`, `.search-results-wrap`
+- 内联 `style` 仅用于运行时动态值（位置 `top`、颜色 `--event-color` 等），静态样式一律放 `globals.css`
+- **禁止引入 Tailwind 或任何 CSS 框架** — 原因：已有 1055 行手写 CSS，混用会破坏一致性
+
+### 工具函数约定
+
+- `lib/utils.ts` 必须是纯函数 — 无副作用、无 `window`/`document` 访问、无 `localStorage`。便于测试和复用。
+- `lib/storage.ts` 存放有副作用的函数 — `localStorage`、`FileReader`、`Blob`、`URL.createObjectURL`
+- 日期格式化统一用 `Intl.DateTimeFormat("zh-CN", ...)`，不引入 `moment`/`dayjs`
+
+## 禁止事项
+
+| # | 禁令 | 原因 |
+|---|---|---|
+| 1 | **不要引入任何 CSS 框架**（Tailwind、styled-components 等） | 项目已有完整的手写 CSS 体系，混用导致不可维护 |
+| 2 | **不要使用 SSR / API Routes / Middleware / Image Optimization** | `next.config.mjs` 设置了 `output: 'export'`，这些特性在静态导出下不可用 |
+| 3 | **不要添加数据库或后端依赖**（Supabase、Prisma 等） | 当前架构为纯前端 + LocalStorage，引入后端需要整体重构 |
+| 4 | **不要修改 `types.ts` 中已有字段的类型或语义** | 这是数据契约，修改会导致 LocalStorage 中的历史数据不兼容 |
+| 5 | **不要修改 `package.json` 中的 `dev` 端口（10352）** | 端口已固定，改动会影响团队开发习惯 |
+| 6 | **不要修改 `next.config.mjs` 中的 `output` 配置** | 改为非静态模式会导致 GitHub Pages 部署失败 |
+| 7 | **不要直接操作 LocalStorage 读写数据** | 必须通过 `lib/storage.ts` 中的函数，以保证 key 名一致和异常处理 |
+| 8 | **不要在组件中直接修改 events/todos 数组** | 必须通过 `setData()` + `syncLinkedItems()`，否则双向关联会断裂 |
+| 9 | **不要引入新的第三方依赖**（npm install） | 需评估是否与静态导出的束体积限制冲突，且当前依赖集已足够覆盖需求 |
+| 10 | **不要引入测试框架或写测试文件** | 项目目前无测试体系，单独加测试文件不会被 CI 运行，反而造成维护负担 |
+
+## 常见改动模式
+
+### 1. 给 EventItem 或 TodoItem 加字段
+
+1. 在 `types.ts` 中加字段（可选字段用 `?`）
+2. 在 `lib/sample-data.ts` 中给示例数据补充该字段
+3. 在用到该类型的组件中处理新字段的展示
+4. **容易遗漏**：`lib/utils.ts` 的 `exportRows()` 函数需要在导出映射中加上新字段
+5. **容易遗漏**：`lib/storage.ts` 的 `importDataFromFile()` 不做字段校验，旧数据导入时新字段为 `undefined`，组件代码需要做好空值兜底
+
+### 2. 新增一个页面
+
+1. 在 `app/` 下创建目录 + `page.tsx`（必须以 `"use client"` 开头）
+2. 在 `app/page.tsx` 的导航区加 `<Link>` 入口
+3. **不要**创建 `layout.tsx`（除非该路由有独立的布局需求）
+4. **不要**使用 `generateStaticParams` 或 `generateMetadata` — 静态导出下动态路由不适用
+
+### 3. 新增一个组件
+
+1. 在 `components/` 下创建文件，以 `"use client"` 开头
+2. Props 类型定义在组件文件内
+3. 样式加在 `app/globals.css` 中
+4. **不要**为组件创建独立 CSS 文件 — 所有样式集中在 `globals.css`
+
+### 4. 修改数据后需要同步双向关联
+
+1. 修改 events 或 todos 后，必须调用 `syncLinkedItems(nextEvents, nextTodos)`
+2. 新创建的 TodoItem 如果关联了 Event，需要同时更新对应 Event 的 `linkedTodoIds`
+3. **参考实现**：`app/page.tsx` 中的 `handleAddTask()` 函数
+
+### 5. 修改 LocalStorage 数据结构
+
+1. 先在 `types.ts` 中改类型
+2. 在 `lib/storage.ts` 中加版本检测或迁移逻辑
+3. **不要**直接改 LocalStorage key 名 — 会导致用户历史数据丢失
+4. **注意**：`importDataFromFile()` 验证只检查 `events` 和 `todos` 字段存在，不校验字段完整性
+
+## 部署
+
+- 触发条件：push 到 `master` 分支 或 手动触发 `workflow_dispatch`
+- 构建流程：`npm ci` → `npm run build`（产出 `out/`） → `upload-pages-artifact` → `deploy-pages`
+- 约束来源：`next.config.mjs` 的 `output: 'export'` 决定了构建产物是完全静态的
+- **这意味着**：没有服务端运行时、不能用动态路由参数、图片必须设为 `unoptimized: true`
+- 配置文件：`.github/workflows/deploy.yml`
+
+## 当前状态
+
+以下功能**已完成**，修改时需保持兼容：
+
+- 多天纵向时间轴（缩放、左右避让、紧凑卡片、hover 展开）
+- 多级待办树（status 提升、step 进度、部门/联系人/备注字段）
+- Event ↔ Todo 双向关联
+- 文字日记视图
+- 全局搜索（关键词匹配 + 类型筛选）
+- 日历视图（按天查看日程/待办）
+- LocalStorage 自动持久化
+- JSON 文件导入/导出
+- GitHub Pages 自动部署
+
+以下功能**明确不实现**，不要主动补全：
+
+- 数据库接入（Supabase 等）— 暂不实现
+- 用户登录/认证 — 暂不实现
+- Excel 真正导出 — 暂不实现
+- iOS/Android App — 暂不实现
+- 编辑/删除/状态变更 UI — 暂不实现（添加已有，其余 CRUD 操作尚未开始）

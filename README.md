@@ -29,9 +29,9 @@ npm install
 npm run dev
 ```
 
-导出代码文件目录：
+查看项目源码文件：
 ```bash
-find . \( -path ./node_modules -o -path ./.next -o -path ./.git \) -prune -o -print
+find . \( -path ./node_modules -o -path ./.next -o -path ./out -o -path ./.git \) -prune -o -print
 ```
 
 ## 数据管理功能
@@ -50,10 +50,7 @@ find . \( -path ./node_modules -o -path ./.next -o -path ./.git \) -prune -o -pr
 
 ## 文档
 
-- `docs/PRODUCT_REQUIREMENTS.md`
-- `docs/AI_DEVELOPMENT_GUIDE.md`
-- `docs/PROMPT_TEMPLATES.md`
-- `docs/ROADMAP.md`
+- `AGENTS.md` — AI 开发上下文文档
 
 ## 下一步建议
 
