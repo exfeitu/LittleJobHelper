@@ -1052,3 +1052,376 @@ button {
     padding-left: 0;
   }
 }
+
+/* ===== 模态弹窗 ===== */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(24, 54, 38, 0.32);
+  backdrop-filter: blur(4px);
+  padding: 20px;
+}
+
+.modal-panel {
+  position: relative;
+  width: min(680px, 100%);
+  max-height: 90vh;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.97), rgba(238,247,239,0.98));
+  box-shadow: 0 32px 96px rgba(110, 156, 118, 0.24);
+  padding: 28px 32px;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 24px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.modal-header h2 {
+  margin: 0;
+  font-size: 1.3rem;
+  color: var(--text);
+}
+
+.modal-close-button {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 1rem;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.modal-close-button:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+/* ===== 工作记录面板 ===== */
+.work-record-panel .record-section {
+  margin-bottom: 20px;
+}
+
+.work-record-panel .record-label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.work-record-panel .record-label .required {
+  color: var(--danger);
+}
+
+/* 时间选择区域 */
+.record-time-section {
+  padding: 18px;
+  border-radius: 14px;
+  background: rgba(79, 143, 99, 0.05);
+  border: 1px solid rgba(108, 156, 120, 0.14);
+}
+
+.record-time-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.record-time-field input[type="datetime-local"] {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  font-size: 0.9rem;
+  color: var(--text);
+}
+
+.record-time-field input[type="datetime-local"]:focus {
+  border-color: var(--accent);
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(79, 143, 99, 0.1);
+}
+
+.record-time-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.record-quick-buttons {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.record-quick-label {
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin-right: 2px;
+}
+
+.record-end-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.record-duration {
+  font-size: 0.9rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.record-duration strong {
+  color: var(--accent);
+  font-size: 1rem;
+}
+
+/* Chip 按钮 */
+.chip-button {
+  padding: 5px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 0.8rem;
+  background: var(--panel);
+  color: var(--muted);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.chip-button:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.chip-time {
+  font-family: "SF Mono", "Cascadia Code", monospace;
+  font-size: 0.78rem;
+  padding: 4px 10px;
+}
+
+.chip-tag {
+  font-size: 0.82rem;
+  padding: 6px 14px;
+}
+
+.chip-tag-active {
+  background: rgba(79, 143, 99, 0.14);
+  border-color: var(--accent);
+  color: #244a31;
+  font-weight: 600;
+}
+
+.chip-remove {
+  margin-left: 4px;
+  padding: 0 2px;
+  border: none;
+  background: none;
+  color: inherit;
+  font-size: 0.7rem;
+  cursor: pointer;
+  opacity: 0.6;
+}
+
+.chip-remove:hover {
+  opacity: 1;
+}
+
+/* 标题输入 */
+.record-title-input {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  font-size: 1.05rem;
+  color: var(--text);
+}
+
+.record-title-input:focus {
+  border-color: var(--accent);
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(79, 143, 99, 0.1);
+}
+
+.record-title-input::placeholder {
+  color: var(--muted);
+}
+
+/* 标签行 */
+.record-tags-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.record-custom-tag {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.record-custom-tag input {
+  flex: 1;
+  max-width: 260px;
+  padding: 7px 12px;
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  font-size: 0.85rem;
+  color: var(--text);
+}
+
+.record-custom-tag input:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.record-custom-tags-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+/* 备注输入 */
+.record-detail-input {
+  width: 100%;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  font-size: 0.9rem;
+  color: var(--text);
+  resize: vertical;
+  min-height: 80px;
+}
+
+.record-detail-input:focus {
+  border-color: var(--accent);
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(79, 143, 99, 0.1);
+}
+
+/* 关联待办 select */
+.work-record-panel select {
+  width: 100%;
+  padding: 9px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  font-size: 0.9rem;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.work-record-panel select:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+/* 错误提示 */
+.record-error {
+  margin-bottom: 16px;
+  padding: 10px 14px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 10px;
+  color: #dc2626;
+  font-size: 0.88rem;
+}
+
+/* 操作栏 */
+.record-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+}
+
+.primary-button {
+  padding: 10px 28px;
+  border: none;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.1s ease;
+}
+
+.primary-button:hover {
+  background: #3d7a52;
+  transform: translateY(-1px);
+}
+
+.primary-button:active {
+  transform: translateY(0);
+}
+
+/* 响应式 */
+@media (max-width: 640px) {
+  .modal-panel {
+    padding: 20px 18px;
+    border-radius: 18px;
+    max-height: 95vh;
+  }
+
+  .record-time-row {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .record-time-actions {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .record-quick-buttons {
+    gap: 4px;
+  }
+
+  .chip-time {
+    padding: 4px 8px;
+    font-size: 0.72rem;
+  }
+
+  .record-actions {
+    flex-direction: column-reverse;
+    gap: 8px;
+  }
+
+  .primary-button,
+  .record-actions .ghost-button {
+    width: 100%;
+    text-align: center;
+  }
+}

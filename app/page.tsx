@@ -6,6 +6,7 @@ import { DayTimeline } from "@/components/day-timeline";
 import { DiaryTimeline } from "@/components/diary-timeline";
 import { SearchPanel } from "@/components/search-panel";
 import { TodoTree } from "@/components/todo-tree";
+import { WorkRecordPanel } from "@/components/work-record-panel";
 import { departmentOptions, sampleEvents, sampleSearchResults, sampleTodos } from "@/lib/sample-data";
 import { buildTodoTree, exportRows, formatDateTime, getFilterValues, getTodayFocus, syncLinkedItems, toJsonBlock } from "@/lib/utils";
 import { loadEventsFromStorage, loadTodosFromStorage, saveEventsToStorage, saveTodosToStorage, exportDataAsFile, importDataFromFile } from "@/lib/storage";
@@ -54,6 +55,7 @@ export default function HomePage() {
   const [showAddTaskForm, setShowAddTaskForm] = useState(false);
   const [showAllTodos, setShowAllTodos] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
+  const [showWorkRecordPanel, setShowWorkRecordPanel] = useState(false);
 
   const departmentChoices = useMemo(
     () => ["全部部门", ...Array.from(new Set([...departmentOptions, ...getFilterValues(todos, "department")]))],
@@ -170,6 +172,20 @@ export default function HomePage() {
     }
   };
 
+  const handleSaveWorkRecord = (newEvent: EventItem, linkedTodoId: string | null) => {
+    const nextEvents = [...events, newEvent];
+    const nextTodos = linkedTodoId
+      ? todos.map((todo) =>
+          todo.id === linkedTodoId
+            ? { ...todo, linkedEventIds: Array.from(new Set([...(todo.linkedEventIds ?? []), newEvent.id])) }
+            : todo,
+        )
+      : todos;
+
+    setData(syncLinkedItems(nextEvents, nextTodos));
+    setShowWorkRecordPanel(false);
+  };
+
   return (
     <main className="app-shell">
       <section className="workspace-simple">
@@ -198,6 +214,24 @@ export default function HomePage() {
 
         <div className="content-layout simple-layout">
           <section className="content-main">
+            <section className="grid overview-grid">
+              <article className="panel section-card">
+                <div className="section-head section-head-tight">
+                  <div>
+                    <h2>今日工作记录</h2>
+                  </div>
+                  <button
+                    className="ghost-button"
+                    type="button"
+                    onClick={() => setShowWorkRecordPanel(true)}
+                  >
+                    📝 快速记录工作
+                  </button>
+                </div>
+                <DiaryTimeline events={todayRecords} />
+              </article>
+            </section>
+
             <section className="grid overview-grid">
               <article className="panel section-card">
                 <div className="section-head section-head-tight">
@@ -386,20 +420,6 @@ export default function HomePage() {
               <article className="panel section-card">
                 <div className="section-head section-head-tight">
                   <div>
-                    <h2>今日工作记录</h2>
-                  </div>
-                  <button className="ghost-button" type="button">
-                    开始记录当前工作
-                  </button>
-                </div>
-                <DiaryTimeline events={todayRecords} />
-              </article>
-            </section>
-
-            <section className="grid overview-grid">
-              <article className="panel section-card">
-                <div className="section-head section-head-tight">
-                  <div>
                     <h2>待办任务</h2>
                   </div>
                   <div className="filters">
@@ -450,6 +470,16 @@ export default function HomePage() {
           </aside>
         </div>
       </section>
+
+      {showWorkRecordPanel && (
+        <WorkRecordPanel
+          events={events}
+          todos={todos}
+          linkedTodoTitles={linkedTodoTitles}
+          onSave={handleSaveWorkRecord}
+          onClose={() => setShowWorkRecordPanel(false)}
+        />
+      )}
     </main>
   );
 }
