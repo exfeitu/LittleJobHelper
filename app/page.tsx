@@ -6,23 +6,12 @@ import { DayTimeline } from "@/components/day-timeline";
 import { DiaryTimeline } from "@/components/diary-timeline";
 import { SearchPanel } from "@/components/search-panel";
 import { TodoTree } from "@/components/todo-tree";
+import { TaskFormPanel } from "@/components/task-form-panel";
 import { WorkRecordPanel } from "@/components/work-record-panel";
 import { departmentOptions, sampleEvents, sampleSearchResults, sampleTodos } from "@/lib/sample-data";
 import { buildTodoTree, exportRows, formatDateTime, getFilterValues, getTodayFocus, syncLinkedItems, toJsonBlock } from "@/lib/utils";
 import { loadEventsFromStorage, loadTodosFromStorage, saveEventsToStorage, saveTodosToStorage, exportDataAsFile, importDataFromFile } from "@/lib/storage";
-import { EventItem, Priority, SearchResult, TodoItem, TodoStatus } from "@/types";
-
-const defaultForm = {
-  title: "",
-  dueDate: "",
-  priority: "medium" as Priority,
-  status: "pending" as TodoStatus,
-  tags: "",
-  department: "",
-  contactPerson: "",
-  remarks: "",
-  linkedEventIds: [] as string[],
-};
+import { EventItem, SearchResult, TodoItem } from "@/types";
 
 export default function HomePage() {
   const [isInitialized, setIsInitialized] = useState(false);
@@ -51,11 +40,10 @@ export default function HomePage() {
   const [departmentFilter, setDepartmentFilter] = useState<string>("全部部门");
   const [contactFilter, setContactFilter] = useState<string>("全部联系人");
   const [searchQuery, setSearchQuery] = useState("");
-  const [form, setForm] = useState(defaultForm);
-  const [showAddTaskForm, setShowAddTaskForm] = useState(false);
   const [showAllTodos, setShowAllTodos] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
   const [showWorkRecordPanel, setShowWorkRecordPanel] = useState(false);
+  const [showTaskFormPanel, setShowTaskFormPanel] = useState(false);
 
   const departmentChoices = useMemo(
     () => ["全部部门", ...Array.from(new Set([...departmentOptions, ...getFilterValues(todos, "department")]))],
@@ -74,10 +62,14 @@ export default function HomePage() {
   const todoTree = useMemo(() => buildTodoTree(filteredTodos), [filteredTodos]);
   const todayFocus = useMemo(() => getTodayFocus(filteredTodos), [filteredTodos]);
   const exportPreview = useMemo(() => toJsonBlock(exportRows(events, todos)), [events, todos]);
-  const todayRecords = useMemo(() => events.filter((event) => event.startTime.startsWith("2026-04-13")), [events]);
+  const todayRecords = useMemo(() => {
+    const now = new Date();
+    const pad2 = (n: number) => String(n).padStart(2, "0");
+    const todayStr = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}`;
+    return events.filter((event) => event.startTime.startsWith(todayStr));
+  }, [events]);
   const linkedTodoTitles = useMemo(() => Object.fromEntries(todos.map((todo) => [todo.id, todo.title])), [todos]);
   const linkedEventTitles = useMemo(() => Object.fromEntries(events.map((event) => [event.id, event.title])), [events]);
-  const availableEventOptions = useMemo(() => events, [events]);
 
   const searchResults = useMemo<SearchResult[]>(() => {
     const normalizedQuery = searchQuery.trim().toLowerCase();
@@ -110,36 +102,16 @@ export default function HomePage() {
     });
   }, [events, searchQuery, todos]);
 
-  const handleAddTask = () => {
-    if (!form.title.trim()) return;
-
-    const newTodo: TodoItem = {
-      id: `todo-${Date.now()}`,
-      title: form.title.trim(),
-      dueDate: form.dueDate || undefined,
-      priority: form.priority,
-      status: form.status,
-      tags: form.tags
-        .split(/[，,]/)
-        .map((tag) => tag.trim())
-        .filter(Boolean),
-      department: form.department || undefined,
-      contactPerson: form.contactPerson || undefined,
-      remarks: form.remarks || undefined,
-      parentId: null,
-      pinnedToToday: form.status !== "completed" && form.status !== "cancelled",
-      linkedEventIds: form.linkedEventIds,
-    };
-
+  const handleSaveTask = (newTodo: TodoItem, linkedEventIds: string[]) => {
     const nextTodos = [...todos, newTodo];
     const nextEvents: EventItem[] = events.map((event) =>
-      form.linkedEventIds.includes(event.id)
+      linkedEventIds.includes(event.id)
         ? { ...event, linkedTodoIds: Array.from(new Set([...(event.linkedTodoIds ?? []), newTodo.id])) }
         : event,
     );
 
     setData(syncLinkedItems(nextEvents, nextTodos));
-    setForm(defaultForm);
+    setShowTaskFormPanel(false);
   };
 
   const handleExportData = () => {
@@ -218,17 +190,57 @@ export default function HomePage() {
               <article className="panel section-card">
                 <div className="section-head section-head-tight">
                   <div>
-                    <h2>今日工作记录</h2>
+                    <h2>今日待办</h2>
                   </div>
-                  <button
-                    className="ghost-button"
-                    type="button"
-                    onClick={() => setShowWorkRecordPanel(true)}
-                  >
-                    📝 快速记录工作
-                  </button>
+                  <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                    <button
+                      className="ghost-button"
+                      type="button"
+                      onClick={() => setShowWorkRecordPanel(true)}
+                    >
+                      📝 快速记录工作
+                    </button>
+                    <button
+                      className="ghost-button"
+                      type="button"
+                      onClick={() => setShowTaskFormPanel(true)}
+                    >
+                      + 添加任务
+                    </button>
+                  </div>
                 </div>
-                <DiaryTimeline events={todayRecords} />
+                <div className="focus-list">
+                  {todayFocus.length > 0 ? (
+                    todayFocus.map((item) => (
+                      <div key={item.id} className="focus-item" style={{
+                        padding: '16px',
+                        marginBottom: '12px',
+                        background: 'var(--card-bg)',
+                        border: '1px solid var(--border-color)',
+                        borderRadius: '8px',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'flex-start',
+                        gap: '16px'
+                      }}>
+                        <div style={{ flex: 1 }}>
+                          <h3 style={{ margin: '0 0 6px 0', fontSize: '1rem', color: 'var(--text)' }}>{item.title}</h3>
+                          <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--muted)' }}>
+                            {item.department ?? "未指定部门"} · {item.contactPerson ?? "未指定联系人"}
+                          </p>
+                        </div>
+                        <div className="focus-meta" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '6px', flexShrink: 0 }}>
+                          <span className={`priority priority-${item.priority}`} style={{ fontSize: '0.75rem' }}>{item.priority}</span>
+                          <strong style={{ fontSize: '0.85rem', color: 'var(--text)' }}>{formatDateTime(item.dueDate)}</strong>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div style={{ padding: '24px', textAlign: 'center', color: 'var(--muted)' }}>
+                      <p>暂无今日待办</p>
+                    </div>
+                  )}
+                </div>
               </article>
             </section>
 
@@ -290,124 +302,6 @@ export default function HomePage() {
               <article className="panel section-card">
                 <div className="section-head section-head-tight">
                   <div>
-                    <h2>今日待办</h2>
-                  </div>
-                  <button 
-                    className="ghost-button" 
-                    type="button"
-                    onClick={() => setShowAddTaskForm(!showAddTaskForm)}
-                  >
-                    {showAddTaskForm ? "收起表单" : "+ 添加任务"}
-                  </button>
-                </div>
-                <div className="focus-list">
-                  {todayFocus.length > 0 ? (
-                    todayFocus.map((item) => (
-                      <div key={item.id} className="focus-item" style={{ 
-                        padding: '16px', 
-                        marginBottom: '12px', 
-                        background: 'var(--card-bg)', 
-                        border: '1px solid var(--border-color)',
-                        borderRadius: '8px',
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'flex-start',
-                        gap: '16px'
-                      }}>
-                        <div style={{ flex: 1 }}>
-                          <h3 style={{ margin: '0 0 6px 0', fontSize: '1rem', color: 'var(--text)' }}>{item.title}</h3>
-                          <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--muted)' }}>
-                            {item.department ?? "未指定部门"} · {item.contactPerson ?? "未指定联系人"}
-                          </p>
-                        </div>
-                        <div className="focus-meta" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '6px', flexShrink: 0 }}>
-                          <span className={`priority priority-${item.priority}`} style={{ fontSize: '0.75rem' }}>{item.priority}</span>
-                          <strong style={{ fontSize: '0.85rem', color: 'var(--text)' }}>{formatDateTime(item.dueDate)}</strong>
-                        </div>
-                      </div>
-                    ))
-                  ) : (
-                    <div style={{ padding: '24px', textAlign: 'center', color: 'var(--muted)' }}>
-                      <p>暂无今日待办</p>
-                    </div>
-                  )}
-                </div>
-                
-                {showAddTaskForm && (
-                  <div className="task-form" style={{ marginTop: "16px", paddingTop: "16px", borderTop: "1px solid var(--border-color)" }}>
-                    <h3 style={{ fontSize: "14px", marginBottom: "12px", color: "var(--text-secondary)" }}>新建任务</h3>
-                    <input
-                      value={form.title}
-                      onChange={(event) => setForm((value) => ({ ...value, title: event.target.value }))}
-                      placeholder="任务标题"
-                    />
-                    <input
-                      type="datetime-local"
-                      value={form.dueDate}
-                      onChange={(event) => setForm((value) => ({ ...value, dueDate: event.target.value }))}
-                    />
-                    <div className="task-form-grid">
-                      <select value={form.priority} onChange={(event) => setForm((value) => ({ ...value, priority: event.target.value as Priority }))}>
-                        <option value="high">高优先级</option>
-                        <option value="medium">中优先级</option>
-                        <option value="low">低优先级</option>
-                      </select>
-                      <select value={form.status} onChange={(event) => setForm((value) => ({ ...value, status: event.target.value as TodoStatus }))}>
-                        <option value="pending">未开始</option>
-                        <option value="in_progress">进行中</option>
-                        <option value="completed">已完成</option>
-                        <option value="cancelled">已取消</option>
-                      </select>
-                    </div>
-                    <input
-                      value={form.department}
-                      onChange={(event) => setForm((value) => ({ ...value, department: event.target.value }))}
-                      placeholder="部门"
-                    />
-                    <input
-                      value={form.contactPerson}
-                      onChange={(event) => setForm((value) => ({ ...value, contactPerson: event.target.value }))}
-                      placeholder="联系人"
-                    />
-                    <input
-                      value={form.tags}
-                      onChange={(event) => setForm((value) => ({ ...value, tags: event.target.value }))}
-                      placeholder="标签，逗号分隔"
-                    />
-                    <select
-                      multiple
-                      value={form.linkedEventIds}
-                      onChange={(event) =>
-                        setForm((value) => ({
-                          ...value,
-                          linkedEventIds: Array.from(event.target.selectedOptions, (option) => option.value),
-                        }))
-                      }
-                    >
-                      {availableEventOptions.map((event) => (
-                        <option key={event.id} value={event.id}>
-                          {event.title}
-                        </option>
-                      ))}
-                    </select>
-                    <textarea
-                      value={form.remarks}
-                      onChange={(event) => setForm((value) => ({ ...value, remarks: event.target.value }))}
-                      placeholder="备注"
-                      rows={4}
-                    />
-                    <button className="ghost-button add-task-button" type="button" onClick={handleAddTask}>
-                      确认添加
-                    </button>
-                  </div>
-                )}
-              </article>
-            </section>
-
-            <section className="grid overview-grid">
-              <article className="panel section-card">
-                <div className="section-head section-head-tight">
-                  <div>
                     <h2>时间轴</h2>
                     <p className="timeline-note">在时间轴区域滚轮可直接放缩；任务过密时会自动避让并压缩为标题。</p>
                   </div>
@@ -457,6 +351,17 @@ export default function HomePage() {
               <article className="panel section-card">
                 <div className="section-head section-head-tight">
                   <div>
+                    <h2>今日工作记录</h2>
+                  </div>
+                </div>
+                <DiaryTimeline events={todayRecords} />
+              </article>
+            </section>
+
+            <section className="grid overview-grid">
+              <article className="panel section-card">
+                <div className="section-head section-head-tight">
+                  <div>
                     <h2>搜索结果</h2>
                   </div>
                 </div>
@@ -478,6 +383,14 @@ export default function HomePage() {
           linkedTodoTitles={linkedTodoTitles}
           onSave={handleSaveWorkRecord}
           onClose={() => setShowWorkRecordPanel(false)}
+        />
+      )}
+
+      {showTaskFormPanel && (
+        <TaskFormPanel
+          events={events}
+          onSave={handleSaveTask}
+          onClose={() => setShowTaskFormPanel(false)}
         />
       )}
     </main>
