@@ -8,9 +8,10 @@ import { SearchPanel } from "@/components/search-panel";
 import { TodoTree } from "@/components/todo-tree";
 import { TaskFormPanel } from "@/components/task-form-panel";
 import { WorkRecordPanel } from "@/components/work-record-panel";
+import { SettingsPanel } from "@/components/settings-panel";
 import { departmentOptions, sampleEvents, sampleSearchResults, sampleTodos } from "@/lib/sample-data";
 import { buildTodoTree, exportRows, formatDateTime, getFilterValues, getTodayFocus, syncLinkedItems, toJsonBlock } from "@/lib/utils";
-import { loadEventsFromStorage, loadTodosFromStorage, saveEventsToStorage, saveTodosToStorage, exportDataAsFile, importDataFromFile } from "@/lib/storage";
+import { loadEventsFromStorage, loadTodosFromStorage, saveEventsToStorage, saveTodosToStorage, exportDataAsFile, importDataFromFile, pushToCloud, loadSettings } from "@/lib/storage";
 import { EventItem, SearchResult, TodoItem } from "@/types";
 
 export default function HomePage() {
@@ -37,6 +38,20 @@ export default function HomePage() {
     }
   }, [events, todos, isInitialized]);
 
+  // 云同步自动推送（防抖 3 秒）
+  useEffect(() => {
+    if (!isInitialized) return;
+
+    const settings = loadSettings();
+    if (!settings) return;
+
+    const timer = setTimeout(() => {
+      pushToCloud(events, todos);
+    }, 3000);
+
+    return () => clearTimeout(timer);
+  }, [events, todos, isInitialized]);
+
   const [departmentFilter, setDepartmentFilter] = useState<string>("全部部门");
   const [contactFilter, setContactFilter] = useState<string>("全部联系人");
   const [searchQuery, setSearchQuery] = useState("");
@@ -44,6 +59,8 @@ export default function HomePage() {
   const [importError, setImportError] = useState<string | null>(null);
   const [showWorkRecordPanel, setShowWorkRecordPanel] = useState(false);
   const [showTaskFormPanel, setShowTaskFormPanel] = useState(false);
+  const [showSettingsPanel, setShowSettingsPanel] = useState(false);
+  const [cloudEnabled, setCloudEnabled] = useState(() => loadSettings() !== null);
 
   const departmentChoices = useMemo(
     () => ["全部部门", ...Array.from(new Set([...departmentOptions, ...getFilterValues(todos, "department")]))],
@@ -175,6 +192,14 @@ export default function HomePage() {
                 日历
               </Link>
             </nav>
+            <button
+              className="ghost-button"
+              type="button"
+              onClick={() => setShowSettingsPanel(true)}
+              title="云同步设置"
+            >
+              {cloudEnabled ? "☁️" : "⚙️"} 同步
+            </button>
             <div className="search-wide">
               <input defaultValue="组织部 / 张主任 / 职级晋升" aria-label="全局搜索" />
             </div>
@@ -391,6 +416,25 @@ export default function HomePage() {
           events={events}
           onSave={handleSaveTask}
           onClose={() => setShowTaskFormPanel(false)}
+        />
+      )}
+
+      {showSettingsPanel && (
+        <SettingsPanel
+          events={events}
+          todos={todos}
+          onDataLoaded={(loadedEvents, loadedTodos) => {
+            const synced = syncLinkedItems(loadedEvents, loadedTodos);
+            setData(synced);
+            // 立即保存到本地
+            saveEventsToStorage(synced.events);
+            saveTodosToStorage(synced.todos);
+            setShowSettingsPanel(false);
+          }}
+          onClose={() => {
+            setShowSettingsPanel(false);
+            setCloudEnabled(loadSettings() !== null);
+          }}
         />
       )}
     </main>
