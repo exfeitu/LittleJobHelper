@@ -11,12 +11,12 @@
 | 框架 | Next.js 16 (App Router) | `output: 'export'` 静态导出 |
 | 语言 | TypeScript 5.8 | strict 模式 |
 | 样式 | 手写 CSS | `globals.css`，约 1600 行，CSS 自定义属性 |
-| 存储 | 浏览器 LocalStorage | 两个 key，无数据库 |
+| 存储 | 浏览器 LocalStorage + GitHub Gist 云同步 | 本地两个 key + 版本号 key；云端私有 Gist；含自动版本迁移 |
 | 部署 | GitHub Pages | `.github/workflows/deploy.yml` |
 | 包管理 | npm | `package-lock.json` |
 | Lint | ESLint 8 | `next/core-web-vitals` |
 
-**本项目没有**：数据库、后端服务、用户认证、CSS 框架（无 Tailwind）、组件库（无 MUI/Ant Design）、自动化测试（无 Jest/Vitest）、SSR、API Routes、Middleware。
+**本项目没有**：数据库、后端服务、用户认证、CSS 框架（无 Tailwind）、组件库（无 MUI/Ant Design）、自动化测试（无 Jest/Vitest）、SSR、API Routes、Middleware。云同步通过 GitHub Gist API（纯 fetch，零依赖）实现。
 
 > 没有的东西和有的东西同等重要。不要擅自引入上述任何一项。
 
@@ -59,8 +59,10 @@ components/
   todo-tree.tsx             # 递归待办树（status 状态提升、step 进度展示）
   work-record-panel.tsx     # 快速记录工作模态弹窗（时间段补录、标签 chip、关联待办）
   task-form-panel.tsx       # 新建任务模态弹窗（chip 标签、关联日程、优先级/状态/部门/联系人）
+  settings-panel.tsx        # 云同步设置模态弹窗（GitHub Token 配置、推送/拉取、状态展示）
+  export-panel.tsx          # 导出设置模态弹窗（JSON/CSV 格式选择、数据预览、一键下载）
 lib/
-  storage.ts                # 副作用函数：LocalStorage 读写、JSON 文件导入/导出
+  storage.ts                # 副作用函数：LocalStorage 读写、JSON 文件导入/导出、GitHub Gist API 云同步、数据版本迁移
   utils.ts                  # 纯函数：双向关联同步、树构建、排序、格式化
   sample-data.ts            # 开发用示例数据（11 事件 + 7 待办），仅当 LocalStorage 为空时使用
 .github/workflows/
@@ -96,9 +98,11 @@ SearchResult { id: string; kind: "event" | "todo"; title: string; snippet: strin
 
 ```
 读取：
-  LocalStorage.getItem() ──有数据──→ useState 初始化
-         │                                  │
-          └──无数据──→ sample-data.ts ──────┘
+  loadAndMigrateFromStorage() ──有数据──→ useState 初始化
+         │                                      │
+         │                        自动检测版本号，过期则 migrateData()
+         │                                      │
+          └──无数据──→ sample-data.ts ──────────┘
                               │
                     syncLinkedItems(events, todos)   ← 双向关联同步
                               │
@@ -115,7 +119,9 @@ SearchResult { id: string; kind: "event" | "todo"; title: string; snippet: strin
 写回：
   用户操作 → setData() → syncLinkedItems() → useState 更新
                                               │
-  useEffect（isInitialized 守卫为 true 时）→ LocalStorage.setItem()
+  useEffect（isInitialized 守卫为 true 时）→ saveEventsToStorage() + saveTodosToStorage()
+                                              │
+  useEffect（3s 防抖，isInitialized 后）──→ pushToCloud()（若已配置云同步）
 ```
 
 **isInitialized 守卫的作用**：防止组件首次挂载时将 sample data 覆盖进 LocalStorage。在 `isInitialized` 变为 `true` 之前，useEffect 不会执行写回。
@@ -157,8 +163,19 @@ SearchResult { id: string; kind: "event" | "todo"; title: string; snippet: strin
 ### 工具函数约定
 
 - `lib/utils.ts` 必须是纯函数 — 无副作用、无 `window`/`document` 访问、无 `localStorage`。便于测试和复用。
-- `lib/storage.ts` 存放有副作用的函数 — `localStorage`、`FileReader`、`Blob`、`URL.createObjectURL`
+- `lib/storage.ts` 存放有副作用的函数 — `localStorage`、`FileReader`、`Blob`、`URL.createObjectURL`、`fetch`（Gist API）
 - 日期格式化统一用 `Intl.DateTimeFormat("zh-CN", ...)`，不引入 `moment`/`dayjs`
+
+### 数据版本迁移系统
+
+`lib/storage.ts` 顶部定义了 `CURRENT_DATA_VERSION`（当前为 1）和 `migrations` 数组。所有数据入口（LocalStorage 加载、Gist 拉取、文件导入）在读取数据后自动调用 `migrateData()`，将旧版本数据升级到当前版本。
+
+**新增/修改 types.ts 字段时的操作流程**：
+1. 在 `types.ts` 中添加/修改字段（可选字段用 `?`）
+2. 将 `CURRENT_DATA_VERSION` 加 1
+3. 在 `migrations` 数组末尾追加迁移函数（从旧版本到新版本的转换逻辑）
+4. 在使用新字段的组件中做好 `undefined` 兜底（`??` 默认值）
+5. 更新 `lib/utils.ts` 的 `exportRows()` 和 `lib/storage.ts` 的 `buildCsv()` 加上新字段
 
 ## 禁止事项
 
@@ -166,8 +183,8 @@ SearchResult { id: string; kind: "event" | "todo"; title: string; snippet: strin
 |---|---|---|
 | 1 | **不要引入任何 CSS 框架**（Tailwind、styled-components 等） | 项目已有完整的手写 CSS 体系，混用导致不可维护 |
 | 2 | **不要使用 SSR / API Routes / Middleware / Image Optimization** | `next.config.mjs` 设置了 `output: 'export'`，这些特性在静态导出下不可用 |
-| 3 | **不要添加数据库或后端依赖**（Supabase、Prisma 等） | 当前架构为纯前端 + LocalStorage，引入后端需要整体重构 |
-| 4 | **不要修改 `types.ts` 中已有字段的类型或语义** | 这是数据契约，修改会导致 LocalStorage 中的历史数据不兼容 |
+| 3 | **不要添加数据库或后端依赖**（Supabase、Prisma 等） | 云同步已通过 GitHub Gist API 实现（纯 fetch，零依赖），不需要额外后端 |
+| 4 | **不要修改 `types.ts` 中已有字段的类型或语义** | 这是数据契约，修改会导致迁移函数失效和 LocalStorage 中的历史数据不兼容。如需改字段，必须同时追加 migration |
 | 5 | **不要修改 `package.json` 中的 `dev` 端口（10352）** | 端口已固定，改动会影响团队开发习惯 |
 | 6 | **不要修改 `next.config.mjs` 中的 `output` 配置** | 改为非静态模式会导致 GitHub Pages 部署失败 |
 | 7 | **不要直接操作 LocalStorage 读写数据** | 必须通过 `lib/storage.ts` 中的函数，以保证 key 名一致和异常处理 |
@@ -241,14 +258,17 @@ SearchResult { id: string; kind: "event" | "todo"; title: string; snippet: strin
 - 文字日记视图（当天工作记录动态过滤）
 - 全局搜索（关键词匹配 + 类型筛选）
 - 日历视图（按天查看日程/待办 + 添加日程表单）
-- LocalStorage 自动持久化（isInitialized 守卫）
-- JSON 文件导入/导出
+- LocalStorage 自动持久化（isInitialized 守卫 + 版本号）
+- JSON 文件导入/导出（导入时自动迁移旧版本数据）
+- CSV 导出（UTF-8 BOM，Excel/WPS 直接打开）
+- GitHub Gist 云同步（私有 Gist、自动推送、Token 配置、跨设备恢复）
+- 数据版本自动迁移（所有数据入口均自动升级旧格式）
+- 导出设置面板（JSON/CSV 格式选择、数据预览）
 - GitHub Pages 自动部署
 
 以下功能**明确不实现**，不要主动补全：
 
-- 数据库接入（Supabase 等）— 暂不实现
 - 用户登录/认证 — 暂不实现
-- Excel 真正导出 — 暂不实现
+- Excel 富格式导出（合并单元格等）— 暂不实现（CSV 已可用）
 - iOS/Android App — 暂不实现
 - 编辑/删除/状态变更操作 — 暂不实现（添加已实现，修改和删除尚未开始）

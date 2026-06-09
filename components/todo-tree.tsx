@@ -6,6 +6,7 @@ type TodoTreeProps = {
   depth?: number;
   linkedEventTitles?: Record<string, string>;
   maxDisplay?: number;
+  onTodoClick?: (todo: TodoTreeNode) => void;
 };
 
 const statusText = {
@@ -21,14 +22,18 @@ const priorityText = {
   low: "低",
 };
 
-export function TodoTree({ nodes, depth = 0, linkedEventTitles = {}, maxDisplay }: TodoTreeProps) {
+export function TodoTree({ nodes, depth = 0, linkedEventTitles = {}, maxDisplay, onTodoClick }: TodoTreeProps) {
   const displayNodes = maxDisplay ? nodes.slice(0, maxDisplay) : nodes;
   
   return (
     <div className="todo-tree">
       {displayNodes.map((node) => (
         <div key={node.id} className="todo-branch">
-          <article className="todo-card" style={{ marginLeft: depth * 20 }}>
+          <article
+            className="todo-card"
+            style={{ marginLeft: depth * 20, cursor: "pointer" }}
+            onClick={() => onTodoClick?.(node)}
+          >
             <div className="todo-main">
               <span className={`checkbox checkbox-${node.computedStatus}`} />
               <div>
@@ -113,7 +118,7 @@ export function TodoTree({ nodes, depth = 0, linkedEventTitles = {}, maxDisplay 
               </div>
             </div>
           </article>
-          {node.children.length ? <TodoTree nodes={node.children} depth={depth + 1} /> : null}
+          {node.children.length ? <TodoTree nodes={node.children} depth={depth + 1} onTodoClick={onTodoClick} /> : null}
         </div>
       ))}
     </div>

@@ -7,11 +7,15 @@ type WorkRecordPanelProps = {
   events: EventItem[];
   todos: TodoItem[];
   linkedTodoTitles: Record<string, string>;
-  onSave: (newEvent: EventItem, linkedTodoId: string | null) => void;
+  editEvent?: EventItem;
+  customTags?: string[];
+  onTagCreated?: (tag: string) => void;
+  onSave: (event: EventItem, linkedTodoId: string | null) => void;
+  onDelete?: (id: string) => void;
   onClose: () => void;
 };
 
-const PRESET_TAGS = ["党建", "人事", "纪检", "编制", "档案", "外出", "会议", "其他"];
+const BASE_TAGS = ["党建", "人事", "纪检", "编制", "档案", "外出", "会议", "其他"];
 
 function toDatetimeLocal(date: Date): string {
   const year = date.getFullYear();
@@ -47,14 +51,24 @@ function getDefaultEndTime(): string {
   return toDatetimeLocal(new Date());
 }
 
-export function WorkRecordPanel({ events, todos, linkedTodoTitles, onSave, onClose }: WorkRecordPanelProps) {
-  const [startTime, setStartTime] = useState(getDefaultStartTime);
-  const [endTime, setEndTime] = useState(getDefaultEndTime);
-  const [title, setTitle] = useState("");
-  const [selectedTags, setSelectedTags] = useState<string[]>([]);
+export function WorkRecordPanel({ events, todos, linkedTodoTitles, editEvent, customTags = [], onTagCreated, onSave, onDelete, onClose }: WorkRecordPanelProps) {
+  const isEdit = !!editEvent;
+  const allTags = useMemo(
+    () => Array.from(new Set([...BASE_TAGS, ...customTags])),
+    [customTags],
+  );
+
+  const [startTime, setStartTime] = useState(
+    editEvent ? editEvent.startTime.slice(0, 16) : getDefaultStartTime,
+  );
+  const [endTime, setEndTime] = useState(
+    editEvent ? editEvent.endTime.slice(0, 16) : getDefaultEndTime,
+  );
+  const [title, setTitle] = useState(editEvent?.title ?? "");
+  const [selectedTags, setSelectedTags] = useState<string[]>(editEvent?.tags ?? []);
   const [customTagInput, setCustomTagInput] = useState("");
-  const [detail, setDetail] = useState("");
-  const [linkedTodoId, setLinkedTodoId] = useState("");
+  const [detail, setDetail] = useState(editEvent?.detail ?? "");
+  const [linkedTodoId, setLinkedTodoId] = useState(editEvent?.linkedTodoIds?.[0] ?? "");
   const [validationError, setValidationError] = useState<string | null>(null);
 
   const duration = useMemo(() => calcDuration(startTime, endTime), [startTime, endTime]);
@@ -76,6 +90,7 @@ export function WorkRecordPanel({ events, todos, linkedTodoTitles, onSave, onClo
     if (!selectedTags.includes(trimmed)) {
       setSelectedTags((prev) => [...prev, trimmed]);
     }
+    onTagCreated?.(trimmed);
     setCustomTagInput("");
   };
 
@@ -143,8 +158,8 @@ export function WorkRecordPanel({ events, todos, linkedTodoTitles, onSave, onClo
       allTags.push(customTagInput.trim());
     }
 
-    const newEvent: EventItem = {
-      id: `event-${Date.now()}`,
+    const event: EventItem = {
+      id: editEvent?.id ?? `event-${Date.now()}`,
       startTime: formatTime(startDate),
       endTime: formatTime(endDate),
       title: title.trim(),
@@ -153,7 +168,7 @@ export function WorkRecordPanel({ events, todos, linkedTodoTitles, onSave, onClo
       linkedTodoIds: linkedTodoId ? [linkedTodoId] : undefined,
     };
 
-    onSave(newEvent, linkedTodoId || null);
+    onSave(event, linkedTodoId || null);
   };
 
   const handleOverlayClick = (e: React.MouseEvent) => {
@@ -166,7 +181,7 @@ export function WorkRecordPanel({ events, todos, linkedTodoTitles, onSave, onClo
     <div className="modal-overlay" onClick={handleOverlayClick}>
       <div className="modal-panel work-record-panel">
         <div className="modal-header">
-          <h2>📝 快速记录工作</h2>
+          <h2>{isEdit ? "✏️ 编辑工作记录" : "📝 快速记录工作"}</h2>
           <button className="modal-close-button" type="button" onClick={onClose} aria-label="关闭">
             ✕
           </button>
@@ -245,7 +260,7 @@ export function WorkRecordPanel({ events, todos, linkedTodoTitles, onSave, onClo
         <div className="record-section">
           <label className="record-label">工作类型标签</label>
           <div className="record-tags-row">
-            {PRESET_TAGS.map((tag) => (
+            {allTags.map((tag) => (
               <button
                 key={tag}
                 type="button"
@@ -274,10 +289,10 @@ export function WorkRecordPanel({ events, todos, linkedTodoTitles, onSave, onClo
               </button>
             )}
           </div>
-          {selectedTags.filter((t) => !PRESET_TAGS.includes(t)).length > 0 && (
+          {selectedTags.filter((t) => !allTags.includes(t)).length > 0 && (
             <div className="record-custom-tags-list">
               {selectedTags
-                .filter((t) => !PRESET_TAGS.includes(t))
+                .filter((t) => !allTags.includes(t))
                 .map((tag) => (
                   <span key={tag} className="chip-button chip-tag chip-tag-active">
                     {tag}
@@ -343,11 +358,26 @@ export function WorkRecordPanel({ events, todos, linkedTodoTitles, onSave, onClo
 
         {/* 操作栏 */}
         <div className="record-actions">
+          {isEdit && onDelete && (
+            <button
+              type="button"
+              className="ghost-button"
+              style={{ color: "#dc2626", marginRight: "auto" }}
+              onClick={() => {
+                if (confirm("确定要删除这条工作记录吗？此操作不可恢复。")) {
+                  onDelete(editEvent!.id);
+                  onClose();
+                }
+              }}
+            >
+              🗑️ 删除记录
+            </button>
+          )}
           <button type="button" className="ghost-button" onClick={onClose}>
             取消
           </button>
           <button type="button" className="primary-button" onClick={handleSave}>
-            保存记录
+            {isEdit ? "保存修改" : "保存记录"}
           </button>
         </div>
       </div>

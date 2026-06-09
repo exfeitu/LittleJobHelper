@@ -1,14 +1,37 @@
 "use client";
 
-import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { EventItem } from "@/types";
+import { type CSSProperties, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { EventItem, TodoItem } from "@/types";
 
 type DayTimelineProps = {
   events: EventItem[];
+  todos?: TodoItem[];
   linkedTodoTitles?: Record<string, string>;
+  onEventClick?: (event: EventItem) => void;
+  onTodoClick?: (todo: TodoItem) => void;
+  // 外部控制（由父组件渲染工具栏时使用）
+  scale?: number;
+  onScaleChange?: (scale: number) => void;
+  scrollToTodayTrigger?: number;
+  scrollToDate?: string;
 };
 
-type PositionedEvent = EventItem & {
+/** 统一的时间轴条目 */
+type TimelineItem = {
+  kind: "event" | "todo";
+  id: string;
+  startTime: string;
+  endTime: string;
+  title: string;
+  detail?: string;
+  tags: string[];
+  // event-specific
+  eventData?: EventItem;
+  // todo-specific
+  todoData?: TodoItem;
+};
+
+type PositionedItem = TimelineItem & {
   color: string;
   lane: number;
   stack: number;
@@ -20,18 +43,28 @@ type PositionedEvent = EventItem & {
   compact: boolean;
 };
 
-const MIN_SCALE = 0.16;
-const MAX_SCALE = 5.2;
-const SCALE_STEP = 0.2;
-const BASE_VISIBLE_DAYS = 7;
-const EVENT_COLORS = ["#5fa86e", "#8c6fd1", "#d99058", "#4f9d9d", "#c96f91", "#7ea95b"];
+const MIN_SCALE = 0.03;
+const MAX_SCALE = 1.0;
+const SCALE_STEP = 0.05;
+const BASE_VISIBLE_DAYS = 1;
+const EVENT_COLORS = ["#5fa86e", "#8c6fd1", "#4f9d9d", "#c96f91", "#7ea95b", "#5b8fc9"];
+const TODO_COLORS = ["#e8964a", "#d97050", "#c98a4f", "#e0a040", "#d97842", "#e8883a"];
 const FULL_CARD_MIN_WIDTH = 60;
 const FULL_CARD_MAX_WIDTH = 320;
-const COMPACT_CARD_WIDTH = 48;
+const COMPACT_CARD_WIDTH = 8;
 const CARD_HORIZONTAL_GAP = 6;
 const COMPACT_SHIFT_THRESHOLD = 40;
 const LANE_HEIGHT = 128;
 const TRACK_PADDING = 64;
+const TODO_MIN_DURATION_MS = 30 * 60 * 1000; // 待办最低 30 分钟宽
+
+const PRIORITY_LABEL: Record<string, string> = { high: "高", medium: "中", low: "低" };
+const STATUS_LABEL: Record<string, string> = {
+  pending: "未开始",
+  in_progress: "进行中",
+  completed: "已完成",
+  cancelled: "已取消",
+};
 
 function startOfDay(value: string) {
   const date = new Date(value);
@@ -49,7 +82,6 @@ function formatClock(value: string) {
   return new Intl.DateTimeFormat("zh-CN", {
     hour: "2-digit",
     minute: "2-digit",
-    second: "2-digit",
     hour12: false,
   }).format(new Date(value));
 }
@@ -64,14 +96,97 @@ function formatDayLabel(value: string) {
   }).format(date);
 }
 
-export function DayTimeline({ events, linkedTodoTitles = {} }: DayTimelineProps) {
-  const [scale, setScale] = useState(1);
+/** 将 EventItem 转为 TimelineItem */
+function eventToTimeline(event: EventItem): TimelineItem {
+  return {
+    kind: "event",
+    id: event.id,
+    startTime: event.startTime,
+    endTime: event.endTime,
+    title: event.title,
+    detail: event.detail,
+    tags: event.tags,
+    eventData: event,
+  };
+}
+
+/** 将 TodoItem 转为 TimelineItem（锚定 dueDate 或 startTime） */
+function todoToTimeline(todo: TodoItem): TimelineItem {
+  const anchor = todo.startTime || todo.dueDate;
+  if (!anchor) {
+    // 没有时间的待办：放到当天中午
+    const today = new Date();
+    today.setHours(12, 0, 0, 0);
+    const pad2 = (n: number) => String(n).padStart(2, "0");
+    const d = `${today.getFullYear()}-${pad2(today.getMonth() + 1)}-${pad2(today.getDate())}`;
+    const noon = `${d}T12:00:00`;
+    const end = new Date(new Date(noon).getTime() + TODO_MIN_DURATION_MS);
+    const endStr = `${d}T${pad2(end.getHours())}:${pad2(end.getMinutes())}:00`;
+    return {
+      kind: "todo",
+      id: todo.id,
+      startTime: noon,
+      endTime: endStr,
+      title: todo.title,
+      detail: todo.remarks,
+      tags: todo.tags,
+      todoData: todo,
+    };
+  }
+
+  const startMs = new Date(anchor).getTime();
+  const endMs = startMs + TODO_MIN_DURATION_MS;
+  const endDate = new Date(endMs);
+  const pad2 = (n: number) => String(n).padStart(2, "0");
+  const d = (s: string) => s.slice(0, 10);
+  const anchorStr = anchor.slice(0, 19);
+  const endStr = `${d(anchor)}T${pad2(endDate.getHours())}:${pad2(endDate.getMinutes())}:00`;
+
+  return {
+    kind: "todo",
+    id: todo.id,
+    startTime: anchorStr,
+    endTime: endStr,
+    title: todo.title,
+    detail: todo.remarks,
+    tags: todo.tags,
+    todoData: todo,
+  };
+}
+
+export function DayTimeline({ events, todos = [], linkedTodoTitles = {}, onEventClick, onTodoClick, scale: externalScale, onScaleChange, scrollToTodayTrigger, scrollToDate }: DayTimelineProps) {
+  const [internalScale, setInternalScale] = useState(1);
+  const scale = externalScale ?? internalScale;
+  const setScale = (v: number) => {
+    if (onScaleChange) {
+      onScaleChange(v);
+    } else {
+      setInternalScale(v);
+    }
+  };
+  const hasExternalToolbar = externalScale !== undefined;
+
+  // 清理 RAF
+  useEffect(() => {
+    return () => {
+      if (rafIdRef.current !== null) cancelAnimationFrame(rafIdRef.current);
+    };
+  }, []);
+
+  const wheelZoomingRef = useRef(false);
+  const prevScaleRef = useRef(scale);
+
   const [expandedCompactId, setExpandedCompactId] = useState<string | null>(null);
   const [containerWidth, setContainerWidth] = useState(800);
   const scrollRef = useRef<HTMLDivElement>(null);
   const initializedRef = useRef(false);
 
-  // 测量容器宽度
+  // 拖动平移
+  const isDragging = useRef(false);
+  const dragStartX = useRef(0);
+  const dragStartScrollLeft = useRef(0);
+  const [dragging, setDragging] = useState(false);
+
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
@@ -84,41 +199,40 @@ export function DayTimeline({ events, linkedTodoTitles = {} }: DayTimelineProps)
     return () => ro.disconnect();
   }, []);
 
-  const sortedEvents = useMemo(
-    () => [...events].sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime()),
-    [events],
-  );
+  // 合并 events 和 todos 为统一的时间轴条目
+  const allItems = useMemo<TimelineItem[]>(() => {
+    const eventItems = events.map(eventToTimeline);
+    const todoItems = todos
+      .filter((t) => t.status !== "cancelled")
+      .map(todoToTimeline);
+    return [...eventItems, ...todoItems].sort(
+      (a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime(),
+    );
+  }, [events, todos]);
 
   const todayStart = useMemo(() => startOfDay(new Date().toISOString()), []);
 
   const timelineDays = useMemo(() => {
-    const MIN_DAYS = 7;
-    if (!sortedEvents.length) {
+    const TODAY = new Date(todayStart);
+    // 始终至少覆盖 today 前后各 730 天（约 4 年），实现"无限"可滚动
+    const FALLBACK_START = new Date(TODAY);
+    FALLBACK_START.setDate(FALLBACK_START.getDate() - 730);
+    const FALLBACK_END = new Date(TODAY);
+    FALLBACK_END.setDate(FALLBACK_END.getDate() + 730);
+
+    if (!allItems.length) {
       const days: string[] = [];
-      const cursor = new Date(todayStart);
-      cursor.setDate(cursor.getDate() - 3);
-      for (let i = 0; i < MIN_DAYS; i++) {
+      const cursor = new Date(FALLBACK_START);
+      while (cursor <= FALLBACK_END) {
         days.push(cursor.toISOString());
         cursor.setDate(cursor.getDate() + 1);
       }
       return days;
     }
-    const dataStart = startOfDay(sortedEvents[0].startTime);
-    const dataEnd = startOfDay(sortedEvents[sortedEvents.length - 1].startTime);
-    const dataDays = Math.round((dataEnd.getTime() - dataStart.getTime()) / 86400000) + 1;
-    let start: Date;
-    let end: Date;
-    if (dataDays >= MIN_DAYS) {
-      start = dataStart;
-      end = dataEnd;
-    } else {
-      const extraDays = MIN_DAYS - dataDays;
-      const beforeDays = Math.floor(extraDays / 2);
-      start = new Date(dataStart);
-      start.setDate(start.getDate() - beforeDays);
-      end = new Date(dataEnd);
-      end.setDate(end.getDate() + (extraDays - beforeDays));
-    }
+    const dataStart = startOfDay(allItems[0].startTime);
+    const dataEnd = startOfDay(allItems[allItems.length - 1].startTime);
+    const start = dataStart < FALLBACK_START ? dataStart : FALLBACK_START;
+    const end = dataEnd > FALLBACK_END ? dataEnd : FALLBACK_END;
     const days: string[] = [];
     const cursor = new Date(start);
     while (cursor <= end) {
@@ -126,9 +240,8 @@ export function DayTimeline({ events, linkedTodoTitles = {} }: DayTimelineProps)
       cursor.setDate(cursor.getDate() + 1);
     }
     return days;
-  }, [sortedEvents, todayStart]);
+  }, [allItems, todayStart]);
 
-  // 整个时间轴覆盖的绝对时间范围
   const timeOrigin = useMemo(
     () => (timelineDays.length ? startOfDay(timelineDays[0]).getTime() : todayStart.getTime()),
     [timelineDays, todayStart],
@@ -139,12 +252,36 @@ export function DayTimeline({ events, linkedTodoTitles = {} }: DayTimelineProps)
   );
   const totalRangeMs = timeEnd - timeOrigin;
 
-  // 缩放决定视口中可见的天数，shell 宽度 = (总天数 / 可见天数) × 容器宽
   const visibleDays = BASE_VISIBLE_DAYS / scale;
   const totalDays = timelineDays.length;
   const shellWidth = Math.max((totalDays / visibleDays) * containerWidth, containerWidth);
 
-  // 初次渲染时滚动到今天居中
+  // 缩放后统一调整 scroll 位置（useLayoutEffect 在 DOM 更新后、绘制前执行，消除闪烁）
+  useLayoutEffect(() => {
+    if (!initializedRef.current) return;
+    const prevScale = prevScaleRef.current;
+    if (prevScale === scale) return;
+    prevScaleRef.current = scale;
+
+    const container = scrollRef.current;
+    if (!container) return;
+
+    if (wheelZoomingRef.current) {
+      wheelZoomingRef.current = false;
+      // 滚轮缩放：锚定光标位置
+      const { ratio, viewportX } = lastCursorRef.current;
+      container.scrollLeft = Math.max(0, ratio * shellWidth - viewportX);
+    } else {
+      // 按钮缩放：保持视窗中心不变
+      const centerXInViewport = containerWidth / 2;
+      const centerXInContent = centerXInViewport + container.scrollLeft;
+      const prevVisibleDays = BASE_VISIBLE_DAYS / prevScale;
+      const prevShellWidth = Math.max((totalDays / prevVisibleDays) * containerWidth, containerWidth);
+      const centerRatio = prevShellWidth > 0 ? centerXInContent / prevShellWidth : 0.5;
+      container.scrollLeft = Math.max(0, centerRatio * shellWidth - centerXInViewport);
+    }
+  }, [scale, shellWidth, containerWidth, totalDays]);
+
   useEffect(() => {
     if (initializedRef.current) return;
     const container = scrollRef.current;
@@ -156,26 +293,33 @@ export function DayTimeline({ events, linkedTodoTitles = {} }: DayTimelineProps)
     initializedRef.current = true;
   }, [containerWidth, shellWidth, timeOrigin, totalRangeMs, todayStart]);
 
-  // 缩放时也重新居中到今天（当 shell 宽度变化时）
+  // 响应外部"回到今天"触发
   useEffect(() => {
-    if (!initializedRef.current) return;
+    if (scrollToTodayTrigger === undefined || scrollToTodayTrigger === 0) return;
+    scrollToToday();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scrollToTodayTrigger]);
+
+  // 响应外部跳转到指定日期
+  useEffect(() => {
+    if (!scrollToDate || !initializedRef.current) return;
     const container = scrollRef.current;
     if (!container || !containerWidth || !totalRangeMs) return;
-    const todayMs = todayStart.getTime();
-    const todayRatio = totalRangeMs > 0 ? (todayMs - timeOrigin) / totalRangeMs : 0.5;
-    const todayPx = todayRatio * shellWidth;
-    container.scrollLeft = Math.max(0, todayPx - containerWidth / 2);
+    const targetMs = startOfDay(scrollToDate).getTime();
+    const targetRatio = totalRangeMs > 0 ? (targetMs - timeOrigin) / totalRangeMs : 0;
+    const targetPx = targetRatio * shellWidth;
+    container.scrollTo({ left: Math.max(0, targetPx - containerWidth / 2), behavior: "smooth" });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scale]);
+  }, [scrollToDate]);
 
-  const positionedEvents = useMemo<PositionedEvent[]>(() => {
+  const positionedItems = useMemo<PositionedItem[]>(() => {
     if (!timelineDays.length) return [];
     const laneEndMinutes: number[] = [];
     const laneRights = { top: [] as number[], bottom: [] as number[] };
 
-    return sortedEvents.map((event, index) => {
-      const startMs = new Date(event.startTime).getTime();
-      const endMs = new Date(event.endTime).getTime();
+    return allItems.map((item, index) => {
+      const startMs = new Date(item.startTime).getTime();
+      const endMs = new Date(item.endTime).getTime();
       const startMinute = (startMs - timeOrigin) / 60000;
       const endMinute = (endMs - timeOrigin) / 60000;
 
@@ -187,10 +331,15 @@ export function DayTimeline({ events, linkedTodoTitles = {} }: DayTimelineProps)
         laneEndMinutes[lane] = endMinute;
       }
 
-      const stack = Math.floor(lane / 2);
-      const side: "top" | "bottom" = lane % 2 === 0 ? "top" : "bottom";
+      // 待办强制放在 bottom 侧，事件放在 top 侧
+      const forceSide = item.kind === "todo" ? "bottom" : "top";
+      // 重新分配 lane 以满足 side 约束
+      const adjustedLane = item.kind === "todo"
+        ? lane % 2 === 0 ? lane + 1 : lane  // bottom = odd lanes
+        : lane % 2 === 0 ? lane : lane + 1;  // top = even lanes
+      const stack = Math.floor(adjustedLane / 2);
+      const side: "top" | "bottom" = adjustedLane % 2 === 0 ? "top" : "bottom";
 
-      // 在整个 shell 中的百分比位置
       const leftPercent = totalRangeMs > 0 ? ((startMs - timeOrigin) / totalRangeMs) * 100 : 0;
       const widthPercent = totalRangeMs > 0 ? (Math.max(60000, endMs - startMs) / totalRangeMs) * 100 : 0;
 
@@ -209,40 +358,103 @@ export function DayTimeline({ events, linkedTodoTitles = {} }: DayTimelineProps)
 
       laneRights[side][stack] = shiftedLeftPx + cardWidthPx;
 
+      const colors = item.kind === "todo" ? TODO_COLORS : EVENT_COLORS;
+      const colorIndex = item.kind === "todo"
+        ? allItems.filter((x, i) => x.kind === "todo" && i <= index).length - 1
+        : allItems.filter((x, i) => x.kind === "event" && i <= index).length - 1;
+
       return {
-        ...event,
-        lane, stack, side,
-        color: EVENT_COLORS[index % EVENT_COLORS.length],
+        ...item,
+        lane: adjustedLane, stack, side,
+        color: colors[Math.max(0, colorIndex) % colors.length],
         leftPercent, widthPercent,
         cardOffsetXPx: cardShiftPx,
         cardWidthPx,
         compact,
       };
     });
-  }, [sortedEvents, timelineDays, timeOrigin, totalRangeMs, shellWidth, scale]);
+  }, [allItems, timelineDays, timeOrigin, totalRangeMs, shellWidth, scale]);
 
   const trackHeight = useMemo(() => {
-    const maxTop = positionedEvents.reduce((m, e) => (e.side === "top" ? Math.max(m, e.stack) : m), -1);
-    const maxBottom = positionedEvents.reduce((m, e) => (e.side === "bottom" ? Math.max(m, e.stack) : m), -1);
+    const maxTop = positionedItems.reduce((m, e) => (e.side === "top" ? Math.max(m, e.stack) : m), -1);
+    const maxBottom = positionedItems.reduce((m, e) => (e.side === "bottom" ? Math.max(m, e.stack) : m), -1);
     const needed = (Math.max(maxTop, maxBottom) + 1) * LANE_HEIGHT * 2 + TRACK_PADDING * 2;
     return Math.max(380, needed);
-  }, [positionedEvents]);
+  }, [positionedItems]);
 
-  const hourMarks = useMemo(() => {
-    const totalMinutes = totalRangeMs / 60000;
-    const count = Math.floor(totalMinutes / 60) + 1;
-    return Array.from({ length: count }, (_, i) => {
-      const isBoundary = i > 0 && i % 24 === 0;
-      return {
-        key: `h-${i}`,
-        leftPercent: totalRangeMs > 0 ? (i * 3600000) / totalRangeMs * 100 : 0,
-        label: `${String(i % 24).padStart(2, "0")}:00`,
-        isBoundary,
-      };
-    });
-  }, [totalRangeMs]);
+  // 按周聚合计数：显示时间范围内每周有多少工作记录和待办
+  const weekBrackets = useMemo(() => {
+    if (!timelineDays.length) return [];
+    const weeks: { start: Date; end: Date; eventCount: number; todoCount: number }[] = [];
+    let cursor = startOfDay(timelineDays[0]);
+    const lastDay = new Date(timelineDays[timelineDays.length - 1]);
+    while (cursor <= lastDay) {
+      const weekStart = new Date(cursor);
+      const weekEnd = new Date(cursor);
+      weekEnd.setDate(weekEnd.getDate() + 6);
+      const ws = weekStart.getTime();
+      const we = weekEnd.getTime() + 86400000;
+      const eventCount = allItems.filter((it) => {
+        const t = new Date(it.startTime).getTime();
+        return it.kind === "event" && t >= ws && t < we;
+      }).length;
+      const todoCount = allItems.filter((it) => {
+        const t = new Date(it.startTime).getTime();
+        return it.kind === "todo" && t >= ws && t < we;
+      }).length;
+      if (eventCount > 0 || todoCount > 0) {
+        weeks.push({ start: weekStart, end: weekEnd, eventCount, todoCount });
+      }
+      cursor.setDate(cursor.getDate() + 7);
+    }
+    return weeks;
+  }, [timelineDays, allItems]);
 
   const axisDensity = scale > 1.2 ? 1 : scale > 0.5 ? 2 : 4;
+
+  const hourMarks = useMemo(() => {
+    const totalHours = Math.floor(totalRangeMs / 3600000) + 1;
+    if (totalHours <= 0) return [];
+    const marks: { key: string; leftPercent: number; label: string; isBoundary: boolean; yearLabel?: string; previousDayLabel?: string; currentDayLabel?: string }[] = [];
+
+    // 只生成会显示的标记：每 axisDensity 小时 + 日期边界
+    for (let hour = 0; hour < totalHours; hour += axisDensity) {
+      const isBoundary = hour > 0 && hour % 24 === 0;
+      const dayIndex = Math.floor(hour / 24);
+      const currentDay = timelineDays[dayIndex];
+      marks.push({
+        key: `h-${hour}`,
+        leftPercent: totalRangeMs > 0 ? (hour * 3600000) / totalRangeMs * 100 : 0,
+        label: `${String(hour % 24).padStart(2, "0")}:00`,
+        isBoundary,
+        ...(isBoundary && dayIndex > 0 ? {
+          yearLabel: `${new Date(timelineDays[dayIndex - 1]).getFullYear()}年`,
+          previousDayLabel: formatDayLabel(timelineDays[dayIndex - 1]),
+          currentDayLabel: formatDayLabel(currentDay),
+        } : {}),
+      });
+    }
+
+    // 补充 axisDensity 步长可能跳过的日期边界
+    for (let hour = 24; hour < totalHours; hour += 24) {
+      if (hour % axisDensity !== 0) {
+        const dayIndex = Math.floor(hour / 24);
+        const currentDay = timelineDays[dayIndex];
+        marks.push({
+          key: `h-${hour}`,
+          leftPercent: totalRangeMs > 0 ? (hour * 3600000) / totalRangeMs * 100 : 0,
+          label: "00:00",
+          isBoundary: true,
+          yearLabel: `${new Date(timelineDays[dayIndex - 1]).getFullYear()}年`,
+          previousDayLabel: formatDayLabel(timelineDays[dayIndex - 1]),
+          currentDayLabel: formatDayLabel(currentDay),
+        });
+      }
+    }
+
+    marks.sort((a, b) => parseInt(a.key.slice(2)) - parseInt(b.key.slice(2)));
+    return marks;
+  }, [totalRangeMs, axisDensity, timelineDays]);
 
   const scrollToToday = useCallback(() => {
     const container = scrollRef.current;
@@ -252,6 +464,54 @@ export function DayTimeline({ events, linkedTodoTitles = {} }: DayTimelineProps)
     const todayPx = todayRatio * shellWidth;
     container.scrollTo({ left: Math.max(0, todayPx - containerWidth / 2), behavior: "smooth" });
   }, [todayStart, timeOrigin, totalRangeMs, shellWidth, containerWidth]);
+
+  // 鼠标拖动平移
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    if (e.button !== 0) return;
+    const container = scrollRef.current;
+    if (!container) return;
+    isDragging.current = true;
+    dragStartX.current = e.clientX;
+    dragStartScrollLeft.current = container.scrollLeft;
+    setDragging(true);
+    e.preventDefault();
+  }, []);
+
+  useEffect(() => {
+    if (!dragging) return;
+    const container = scrollRef.current;
+    if (!container) return;
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isDragging.current) return;
+      const dx = e.clientX - dragStartX.current;
+      container.scrollLeft = dragStartScrollLeft.current - dx;
+    };
+    const handleMouseUp = () => {
+      isDragging.current = false;
+      setDragging(false);
+    };
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [dragging]);
+
+  // 年份标签
+  const yearLabel = useMemo(() => {
+    if (!timelineDays.length) return "";
+    const midIdx = Math.floor(timelineDays.length / 2);
+    const midDate = new Date(timelineDays[midIdx]);
+    return `${midDate.getFullYear()}年`;
+  }, [timelineDays]);
+
+  // 滚轮缩放 RAF 批处理，消除卡顿
+  const pendingFactorRef = useRef(1);
+  const rafIdRef = useRef<number | null>(null);
+  const lastCursorRef = useRef({ ratio: 0, viewportX: 0 });
+  const scaleRef = useRef(scale);
+  scaleRef.current = scale;
 
   const handleWheel = useCallback(
     (event: React.WheelEvent) => {
@@ -264,70 +524,70 @@ export function DayTimeline({ events, linkedTodoTitles = {} }: DayTimelineProps)
       const rect = container.getBoundingClientRect();
       const cursorXInViewport = event.clientX - rect.left;
       const cursorXInContent = cursorXInViewport + container.scrollLeft;
-      const cursorRatio = shellWidth > 0 ? cursorXInContent / shellWidth : 0;
+      lastCursorRef.current = {
+        ratio: shellWidth > 0 ? cursorXInContent / shellWidth : 0,
+        viewportX: cursorXInViewport,
+      };
 
-      setScale((prev) => {
-        const next = event.deltaY < 0 ? prev + SCALE_STEP : prev - SCALE_STEP;
-        const clamped = Number(Math.min(MAX_SCALE, Math.max(MIN_SCALE, next)).toFixed(2));
-        return clamped;
-      });
+      // 累积缩放因子
+      const tickFactor = event.deltaY < 0 ? 1.05 : 0.95;
+      pendingFactorRef.current *= tickFactor;
 
-      // 缩放后保持光标位置对应的时间点不动
-      requestAnimationFrame(() => {
-        const newVisibleDays = BASE_VISIBLE_DAYS / scale;
-        const newShellWidth = Math.max((totalDays / newVisibleDays) * containerWidth, containerWidth);
-        // 读取最新的 scale 需要通过闭包 — 实际上 scale 还没更新，用 clamped
-        // 简化处理：在下一帧重新计算并设置 scrollLeft
-        const updatedVisibleDays = BASE_VISIBLE_DAYS / (event.deltaY < 0 ? Math.min(MAX_SCALE, scale + SCALE_STEP) : Math.max(MIN_SCALE, scale - SCALE_STEP));
-        const updatedShellWidth = Math.max((totalDays / updatedVisibleDays) * containerWidth, containerWidth);
-        container.scrollLeft = Math.max(0, cursorRatio * updatedShellWidth - cursorXInViewport);
+      if (rafIdRef.current !== null) return; // 已有待处理的 RAF
+      rafIdRef.current = requestAnimationFrame(() => {
+        rafIdRef.current = null;
+        const factor = pendingFactorRef.current;
+        pendingFactorRef.current = 1;
+        const nextScale = scaleRef.current * factor;
+        const clamped = Number(Math.min(MAX_SCALE, Math.max(MIN_SCALE, nextScale)).toFixed(4));
+        if (clamped === scaleRef.current) return;
+        wheelZoomingRef.current = true;
+        // scrollLeft 由 useLayoutEffect 在 DOM 更新后同步设置，消除闪烁
+        setScale(clamped);
       });
     },
-    [scale, shellWidth, containerWidth, totalDays],
+    [shellWidth, containerWidth, totalDays],
   );
 
   return (
     <div className="line-timeline">
-      <div className="line-timeline-toolbar">
-        <button className="axis-zoom-button" onClick={() => setScale((v) => Math.min(MAX_SCALE, v + SCALE_STEP))} type="button">＋</button>
-        <span className="axis-zoom-value axis-zoom-value-inline">{Math.round(scale * 100)}%</span>
-        <button className="axis-zoom-button" onClick={() => setScale((v) => Math.max(MIN_SCALE, v - SCALE_STEP))} type="button">－</button>
-        <span className="toolbar-sep" />
-        <button className="axis-today-button" type="button" onClick={scrollToToday}>今天</button>
-        <span className="toolbar-sep" />
-        <span className="axis-zoom-value-inline" style={{ minWidth: "auto", fontSize: "0.75rem" }}>
-          {Math.round(visibleDays * 10) / 10}天
-        </span>
-      </div>
-      <div className="line-timeline-hscroll" ref={scrollRef} onWheel={handleWheel}>
+      {!hasExternalToolbar && (
+        <div className="line-timeline-toolbar">
+          <button className="axis-zoom-button" onClick={() => setScale(Math.min(MAX_SCALE, scale + SCALE_STEP))} type="button">＋</button>
+          <span className="axis-zoom-value axis-zoom-value-inline">{Math.round(scale * 100)}%</span>
+          <button className="axis-zoom-button" onClick={() => setScale(Math.max(MIN_SCALE, scale - SCALE_STEP))} type="button">－</button>
+          <span className="toolbar-sep" />
+          <button className="axis-today-button" type="button" onClick={scrollToToday}>今天</button>
+          <span className="toolbar-sep" />
+          <span className="axis-zoom-value-inline" style={{ minWidth: "auto", fontSize: "0.75rem" }}>
+            {Math.round(visibleDays * 10) / 10}天
+          </span>
+        </div>
+      )}
+      <div className="line-timeline-hscroll" ref={scrollRef} onWheel={handleWheel} onMouseDown={handleMouseDown} style={{ cursor: dragging ? "grabbing" : "grab" }}>
         <div className="line-timeline-shell" style={{ width: shellWidth, height: trackHeight }}>
+          <div className="line-timeline-year">{yearLabel}</div>
           <div className="line-timeline-track">
-            {/* 水平时间轴线 */}
             <div className="line-timeline-axis" />
 
             {/* 时间刻度 */}
             <div className="line-timeline-axis-zone">
-              {hourMarks.map((mark, i) => {
-                const previousDay = i > 0 ? timelineDays[Math.floor((i - 1) / 24)] : undefined;
-                const currentDay = timelineDays[Math.floor(i / 24)];
-                const showLabel = mark.isBoundary || i % axisDensity === 0;
-                if (!showLabel) return null;
-                return (
-                  <div key={mark.key} className={`axis-time-mark ${mark.isBoundary ? "boundary" : ""}`} style={{ left: `${mark.leftPercent}%` }}>
-                    {mark.isBoundary && previousDay && currentDay ? (
-                      <div className="axis-boundary-stack">
-                        <span className="axis-boundary-date">{formatDayLabel(previousDay)}</span>
-                        <strong>24:00</strong>
-                        <span className="axis-boundary-line" />
-                        <strong>00:00</strong>
-                        <span className="axis-boundary-date">{formatDayLabel(currentDay)}</span>
-                      </div>
-                    ) : (
-                      <strong className="axis-hour-label">{mark.label}</strong>
-                    )}
-                  </div>
-                );
-              })}
+              {hourMarks.map((mark) => (
+                <div key={mark.key} className={`axis-time-mark ${mark.isBoundary ? "boundary" : ""}`} style={{ left: `${mark.leftPercent}%` }}>
+                  {mark.isBoundary && mark.previousDayLabel && mark.currentDayLabel ? (
+                    <div className="axis-boundary-stack">
+                      <span className="axis-boundary-year">{mark.yearLabel}</span>
+                      <span className="axis-boundary-date">{mark.previousDayLabel}</span>
+                      <strong>24:00</strong>
+                      <span className="axis-boundary-line" />
+                      <strong>00:00</strong>
+                      <span className="axis-boundary-date">{mark.currentDayLabel}</span>
+                    </div>
+                  ) : (
+                    <strong className="axis-hour-label">{mark.label}</strong>
+                  )}
+                </div>
+              ))}
             </div>
 
             {/* 日分隔竖线 */}
@@ -337,6 +597,27 @@ export function DayTimeline({ events, linkedTodoTitles = {} }: DayTimelineProps)
               return <div key={`sep-${day}`} className="line-day-separator" style={{ left: `${dayLeftPercent}%` }} />;
             })}
 
+            {/* 周计数括号 */}
+            {weekBrackets.map((week) => {
+              const ws = week.start.getTime();
+              const we = week.end.getTime() + 86400000;
+              const leftPct = totalRangeMs > 0 ? ((ws - timeOrigin) / totalRangeMs) * 100 : 0;
+              const widthPct = totalRangeMs > 0 ? ((we - ws) / totalRangeMs) * 100 : 0;
+              return (
+                <div
+                  key={`wk-${week.start.toISOString()}`}
+                  className="week-bracket"
+                  style={{ left: `${leftPct}%`, width: `${widthPct}%` }}
+                >
+                  <span className="week-bracket-label">
+                    {week.eventCount > 0 && `${week.eventCount}记录`}
+                    {week.eventCount > 0 && week.todoCount > 0 && " · "}
+                    {week.todoCount > 0 && `${week.todoCount}待办`}
+                  </span>
+                </div>
+              );
+            })}
+
             {/* 每日标签 */}
             {timelineDays.map((day) => {
               const dayStart = startOfDay(day).getTime();
@@ -344,58 +625,119 @@ export function DayTimeline({ events, linkedTodoTitles = {} }: DayTimelineProps)
               return <div key={day} className="line-day-chip" style={{ left: `${dayLeftPercent}%` }}>{formatDayLabel(day)}</div>;
             })}
 
-            {/* 事件卡片 */}
-            {positionedEvents.map((event) => {
-              const isExpanded = expandedCompactId === event.id;
-              const renderCompact = event.compact && !isExpanded;
+            {/* 统一渲染时间轴条目（事件 + 待办） */}
+            {positionedItems.map((item) => {
+              const isExpanded = expandedCompactId === item.id;
+              const renderCompact = item.compact;
+              const showTooltip = item.compact && isExpanded;
+              const isTodo = item.kind === "todo";
+              const tooltipStyle = showTooltip ? {
+                left: `var(--card-offset-x, 0px)`,
+                width: `${item.cardWidthPx}px`,
+                maxWidth: "320px",
+                zIndex: 100,
+              } as CSSProperties : undefined;
               const style = {
-                left: `${event.leftPercent}%`,
-                width: `${event.widthPercent}%`,
-                "--event-color": event.color,
-                "--stack-offset": `${event.stack * LANE_HEIGHT}px`,
-                "--card-offset-x": `${event.cardOffsetXPx}px`,
-                "--card-width": `${renderCompact ? COMPACT_CARD_WIDTH : event.cardWidthPx}px`,
+                left: `${item.leftPercent}%`,
+                width: `${item.widthPercent}%`,
+                "--event-color": item.color,
+                "--stack-offset": `${item.stack * LANE_HEIGHT}px`,
+                "--card-offset-x": `${item.cardOffsetXPx}px`,
+                "--card-width": `${renderCompact ? COMPACT_CARD_WIDTH : item.cardWidthPx}px`,
                 "--lane-height": `${LANE_HEIGHT}px`,
               } as CSSProperties;
 
+              const handleClick = () => {
+                if (isTodo && item.todoData && onTodoClick) {
+                  onTodoClick(item.todoData);
+                } else if (!isTodo && item.eventData && onEventClick) {
+                  onEventClick(item.eventData);
+                }
+              };
+
               return (
-                <article key={event.id} className={`line-event line-event-${event.side} ${renderCompact ? "compact" : ""}`} style={style}>
+                <article
+                  key={`${item.kind}-${item.id}`}
+                  className={`line-event line-event-${item.side} ${renderCompact ? "compact" : ""} ${isTodo ? "line-todo" : ""}`}
+                  style={style}
+                >
                   <div className="line-event-axis-group">
-                    <span className="line-event-point" />
+                    <span className={`line-event-point ${isTodo ? "line-todo-point" : ""}`} />
                     <span className="line-event-stem" />
                   </div>
                   <button
-                    className="line-event-card"
+                    className={`line-event-card ${isTodo ? "line-todo-card" : ""}`}
                     type="button"
-                    onClick={() => setExpandedCompactId((v) => (v === event.id ? null : event.id))}
-                    onMouseEnter={() => { if (event.compact) setExpandedCompactId(event.id); }}
-                    onMouseLeave={() => { if (event.compact) setExpandedCompactId((v) => (v === event.id ? null : v)); }}
+                    onClick={handleClick}
+                    onMouseEnter={() => { if (item.compact) setExpandedCompactId(item.id); }}
+                    onMouseLeave={() => { if (item.compact) setExpandedCompactId((v) => (v === item.id ? null : v)); }}
                   >
                     {renderCompact ? (
-                      <>
-                        <h4>{event.title}</h4>
-                        {event.linkedTodoIds?.some((id) => linkedTodoTitles[id]) ? (
-                          <span className="compact-link-dot" title={`关联待办：${event.linkedTodoIds?.filter((id) => linkedTodoTitles[id]).map((id) => linkedTodoTitles[id]).join("、")}`} />
+                      <div className="compact-bar" title={item.title}>
+                        {!isTodo && item.eventData?.linkedTodoIds?.some((id) => linkedTodoTitles[id]) ? (
+                          <span className="compact-link-dot" />
                         ) : null}
-                      </>
+                      </div>
                     ) : (
                       <>
-                        <div className="line-event-time">{formatClock(event.startTime)} — {formatClock(event.endTime)}</div>
-                        {event.linkedTodoIds?.length ? (
+                        <div className="line-event-time">
+                          {isTodo ? "📌 待办" : `${formatClock(item.startTime)} — ${formatClock(item.endTime)}`}
+                        </div>
+                        {!isTodo && item.eventData?.linkedTodoIds?.length ? (
                           <div className="link-badge-group link-badge-group-event">
-                            {event.linkedTodoIds.filter((id) => linkedTodoTitles[id]).map((id) => (
+                            {item.eventData.linkedTodoIds.filter((id) => linkedTodoTitles[id]).map((id) => (
                               <div key={id} className="link-badge link-badge-event">关联待办：{linkedTodoTitles[id]}</div>
                             ))}
                           </div>
                         ) : null}
-                        <h4>{event.title}</h4>
-                        <p>{event.detail}</p>
+                        <h4>{item.title}</h4>
+                        {isTodo && item.todoData ? (
+                          <div className="line-todo-meta">
+                            <span className={`line-todo-priority priority-${item.todoData.priority}`}>
+                              {PRIORITY_LABEL[item.todoData.priority] ?? item.todoData.priority}
+                            </span>
+                            <span className="line-todo-status">{STATUS_LABEL[item.todoData.status] ?? item.todoData.status}</span>
+                          </div>
+                        ) : (
+                          <p>{item.detail}</p>
+                        )}
                         <div className="tag-row compact-tags">
-                          {event.tags.map((tag) => <span key={tag} className="tag chip">{tag}</span>)}
+                          {item.tags.map((tag) => <span key={tag} className="tag chip">{tag}</span>)}
                         </div>
                       </>
                     )}
                   </button>
+                  {showTooltip && (
+                    <div
+                      className={`line-expand-tooltip line-expand-tooltip-${item.side} ${isTodo ? "line-todo-card" : ""}`}
+                      style={tooltipStyle}
+                    >
+                      <div className="line-event-time">
+                        {isTodo ? "📌 待办" : `${formatClock(item.startTime)} — ${formatClock(item.endTime)}`}
+                      </div>
+                      {!isTodo && item.eventData?.linkedTodoIds?.length ? (
+                        <div className="link-badge-group link-badge-group-event">
+                          {item.eventData.linkedTodoIds.filter((id) => linkedTodoTitles[id]).map((id) => (
+                            <div key={id} className="link-badge link-badge-event">关联待办：{linkedTodoTitles[id]}</div>
+                          ))}
+                        </div>
+                      ) : null}
+                      <h4>{item.title}</h4>
+                      {isTodo && item.todoData ? (
+                        <div className="line-todo-meta">
+                          <span className={`line-todo-priority priority-${item.todoData.priority}`}>
+                            {PRIORITY_LABEL[item.todoData.priority] ?? item.todoData.priority}
+                          </span>
+                          <span className="line-todo-status">{STATUS_LABEL[item.todoData.status] ?? item.todoData.status}</span>
+                        </div>
+                      ) : (
+                        <p>{item.detail}</p>
+                      )}
+                      <div className="tag-row compact-tags">
+                        {item.tags.map((tag) => <span key={tag} className="tag chip">{tag}</span>)}
+                      </div>
+                    </div>
+                  )}
                 </article>
               );
             })}

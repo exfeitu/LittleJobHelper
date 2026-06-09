@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DayTimeline } from "@/components/day-timeline";
 import { DiaryTimeline } from "@/components/diary-timeline";
 import { SearchPanel } from "@/components/search-panel";
@@ -9,21 +9,22 @@ import { TodoTree } from "@/components/todo-tree";
 import { TaskFormPanel } from "@/components/task-form-panel";
 import { WorkRecordPanel } from "@/components/work-record-panel";
 import { SettingsPanel } from "@/components/settings-panel";
-import { departmentOptions, sampleEvents, sampleSearchResults, sampleTodos } from "@/lib/sample-data";
-import { buildTodoTree, exportRows, formatDateTime, getFilterValues, getTodayFocus, syncLinkedItems, toJsonBlock } from "@/lib/utils";
-import { loadEventsFromStorage, loadTodosFromStorage, saveEventsToStorage, saveTodosToStorage, exportDataAsFile, importDataFromFile, pushToCloud, loadSettings } from "@/lib/storage";
+import { ExportPanel } from "@/components/export-panel";
+import { HelpIcon } from "@/components/help-icon";
+import { departmentOptions, sampleEvents, sampleTodos } from "@/lib/sample-data";
+import { buildTodoTree, formatDateTime, getFilterValues, getTodayFocus, syncLinkedItems } from "@/lib/utils";
+import { loadAndMigrateFromStorage, saveEventsToStorage, saveTodosToStorage, pushToCloud, loadSettings, loadCustomTags, addCustomTag } from "@/lib/storage";
 import { EventItem, SearchResult, TodoItem } from "@/types";
 
 export default function HomePage() {
   const [isInitialized, setIsInitialized] = useState(false);
   const [{ events, todos }, setData] = useState(() => {
-    const storedEvents = loadEventsFromStorage();
-    const storedTodos = loadTodosFromStorage();
-    
-    if (storedEvents && storedTodos) {
-      return syncLinkedItems(storedEvents, storedTodos);
+    const stored = loadAndMigrateFromStorage();
+
+    if (stored.events.length > 0 || stored.todos.length > 0) {
+      return syncLinkedItems(stored.events, stored.todos);
     }
-    
+
     return syncLinkedItems(sampleEvents, sampleTodos);
   });
   
@@ -56,11 +57,87 @@ export default function HomePage() {
   const [contactFilter, setContactFilter] = useState<string>("全部联系人");
   const [searchQuery, setSearchQuery] = useState("");
   const [showAllTodos, setShowAllTodos] = useState(false);
-  const [importError, setImportError] = useState<string | null>(null);
   const [showWorkRecordPanel, setShowWorkRecordPanel] = useState(false);
   const [showTaskFormPanel, setShowTaskFormPanel] = useState(false);
   const [showSettingsPanel, setShowSettingsPanel] = useState(false);
   const [cloudEnabled, setCloudEnabled] = useState(() => loadSettings() !== null);
+  const [showExportPanel, setShowExportPanel] = useState(false);
+  const [editingEvent, setEditingEvent] = useState<EventItem | undefined>(undefined);
+  const [editingTodo, setEditingTodo] = useState<TodoItem | undefined>(undefined);
+  const [customTags, setCustomTags] = useState<string[]>(() => loadCustomTags());
+
+  // 时间轴缩放控制（状态提升到 header 工具栏）
+  const [timelineScale, setTimelineScale] = useState(0.35);
+  const [scrollToTodayTrigger, setScrollToTodayTrigger] = useState(0);
+  const MIN_SCALE = 0.03;
+  const MAX_SCALE = 1.0;
+  const BASE_VISIBLE_DAYS = 1;
+  const visibleDays = BASE_VISIBLE_DAYS / timelineScale;
+
+  // "今天"按钮：单击→日期选择；双击→30天视图+回到今天
+  const todayClickTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const todayClickCount = useRef(0);
+  const [showTodayPicker, setShowTodayPicker] = useState(false);
+  const [scrollToDate, setScrollToDate] = useState<string | undefined>(undefined);
+
+  const handleTodayClick = useCallback(() => {
+    todayClickCount.current += 1;
+    if (todayClickCount.current === 1) {
+      todayClickTimer.current = setTimeout(() => {
+        // 单击 → 7天视图 + 回到今天
+        setTimelineScale(BASE_VISIBLE_DAYS / 7);
+        setScrollToTodayTrigger((v) => v + 1);
+        todayClickCount.current = 0;
+      }, 250);
+    } else if (todayClickCount.current >= 2) {
+      if (todayClickTimer.current) clearTimeout(todayClickTimer.current);
+      todayClickCount.current = 0;
+      // 双击 → 日期选择器
+      setShowTodayPicker(true);
+    }
+  }, []);
+
+  const handleTodayPickerChange = useCallback((date: string) => {
+    setShowTodayPicker(false);
+    if (!date) return;
+    setTimelineScale(MAX_SCALE);
+    setScrollToDate(date);
+  }, []);
+
+  // "X天"按钮：单击→自定义天数；双击→3天视图
+  const daysClickTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const daysClickCount = useRef(0);
+  const [showDaysInput, setShowDaysInput] = useState(false);
+  const [customDays, setCustomDays] = useState("3");
+
+  const handleDaysClick = useCallback(() => {
+    daysClickCount.current += 1;
+    if (daysClickCount.current === 1) {
+      daysClickTimer.current = setTimeout(() => {
+        // 单击 → 恢复3天视图
+        setTimelineScale(0.35);
+        daysClickCount.current = 0;
+      }, 250);
+    } else if (daysClickCount.current >= 2) {
+      if (daysClickTimer.current) clearTimeout(daysClickTimer.current);
+      daysClickCount.current = 0;
+      // 双击 → 自定义天数输入
+      setCustomDays(String(Math.round(BASE_VISIBLE_DAYS / timelineScale * 10) / 10));
+      setShowDaysInput(true);
+    }
+  }, [timelineScale]);
+
+  const handleCustomDaysSubmit = useCallback(() => {
+    setShowDaysInput(false);
+    const days = parseFloat(customDays);
+    if (isNaN(days) || days <= 0) return;
+    const targetScale = BASE_VISIBLE_DAYS / days;
+    setTimelineScale(Math.min(MAX_SCALE, Math.max(MIN_SCALE, +(targetScale).toFixed(4))));
+  }, [customDays]);
+
+  const handleTagCreated = (tag: string) => {
+    setCustomTags(addCustomTag(tag));
+  };
 
   const departmentChoices = useMemo(
     () => ["全部部门", ...Array.from(new Set([...departmentOptions, ...getFilterValues(todos, "department")]))],
@@ -78,7 +155,6 @@ export default function HomePage() {
 
   const todoTree = useMemo(() => buildTodoTree(filteredTodos), [filteredTodos]);
   const todayFocus = useMemo(() => getTodayFocus(filteredTodos), [filteredTodos]);
-  const exportPreview = useMemo(() => toJsonBlock(exportRows(events, todos)), [events, todos]);
   const todayRecords = useMemo(() => {
     const now = new Date();
     const pad2 = (n: number) => String(n).padStart(2, "0");
@@ -90,27 +166,27 @@ export default function HomePage() {
 
   const searchResults = useMemo<SearchResult[]>(() => {
     const normalizedQuery = searchQuery.trim().toLowerCase();
-    const baseResults = [
-      ...todos.map<SearchResult>((todo) => ({
+    const baseResults: SearchResult[] = [
+      ...todos.map((todo) => ({
         id: `todo-${todo.id}`,
-        kind: "todo",
+        kind: "todo" as const,
         title: todo.title,
         snippet: [todo.department, todo.contactPerson, todo.remarks].filter(Boolean).join(" · ") || "待办事项",
         dateLabel: todo.dueDate ? `截止 ${formatDateTime(todo.dueDate)}` : "未设置截止时间",
         tags: todo.tags,
       })),
-      ...events.map<SearchResult>((event) => ({
+      ...events.map((event) => ({
         id: `event-${event.id}`,
-        kind: "event",
+        kind: "event" as const,
         title: event.title,
-        snippet: event.detail ?? "时间轴记录",
+        snippet: event.detail ?? "工作记录",
         dateLabel: formatDateTime(event.startTime),
         tags: event.tags,
       })),
     ];
 
     if (!normalizedQuery) {
-      return baseResults.slice(0, sampleSearchResults.length);
+      return [];
     }
 
     return baseResults.filter((result) => {
@@ -119,60 +195,59 @@ export default function HomePage() {
     });
   }, [events, searchQuery, todos]);
 
-  const handleSaveTask = (newTodo: TodoItem, linkedEventIds: string[]) => {
-    const nextTodos = [...todos, newTodo];
-    const nextEvents: EventItem[] = events.map((event) =>
-      linkedEventIds.includes(event.id)
-        ? { ...event, linkedTodoIds: Array.from(new Set([...(event.linkedTodoIds ?? []), newTodo.id])) }
-        : event,
-    );
+  const handleSaveTask = (todo: TodoItem) => {
+    const isUpdate = todos.some((t) => t.id === todo.id);
+    const nextTodos = isUpdate
+      ? todos.map((t) => (t.id === todo.id ? todo : t))
+      : [...todos, todo];
 
-    setData(syncLinkedItems(nextEvents, nextTodos));
+    setData(syncLinkedItems(events, nextTodos));
     setShowTaskFormPanel(false);
+    setEditingTodo(undefined);
   };
 
-  const handleExportData = () => {
-    exportDataAsFile(events, todos);
-  };
+  const handleSaveWorkRecord = (event: EventItem, linkedTodoId: string | null) => {
+    const isUpdate = events.some((e) => e.id === event.id);
+    const nextEvents = isUpdate
+      ? events.map((e) => (e.id === event.id ? event : e))
+      : [...events, event];
 
-  const handleImportData = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    
-    try {
-      setImportError(null);
-      const { events: importedEvents, todos: importedTodos } = await importDataFromFile(file);
-      const synced = syncLinkedItems(importedEvents, importedTodos);
-      setData(synced);
-      alert("数据导入成功！");
-    } catch (error) {
-      setImportError(error instanceof Error ? error.message : "导入失败");
-    } finally {
-      event.target.value = "";
-    }
-  };
-
-  const handleClearData = () => {
-    if (confirm("确定要清空所有数据吗？此操作不可恢复！")) {
-      const cleared = syncLinkedItems([], []);
-      setData(cleared);
-      localStorage.removeItem("little-job-helper-events");
-      localStorage.removeItem("little-job-helper-todos");
-    }
-  };
-
-  const handleSaveWorkRecord = (newEvent: EventItem, linkedTodoId: string | null) => {
-    const nextEvents = [...events, newEvent];
     const nextTodos = linkedTodoId
       ? todos.map((todo) =>
           todo.id === linkedTodoId
-            ? { ...todo, linkedEventIds: Array.from(new Set([...(todo.linkedEventIds ?? []), newEvent.id])) }
+            ? { ...todo, linkedEventIds: Array.from(new Set([...(todo.linkedEventIds ?? []), event.id])) }
             : todo,
         )
-      : todos;
+      : isUpdate
+        ? todos.map((todo) => ({
+            ...todo,
+            linkedEventIds: (todo.linkedEventIds ?? []).filter((id) => id !== event.id),
+          }))
+        : todos;
 
     setData(syncLinkedItems(nextEvents, nextTodos));
     setShowWorkRecordPanel(false);
+    setEditingEvent(undefined);
+  };
+
+  const handleDeleteEvent = (id: string) => {
+    const nextEvents = events.filter((e) => e.id !== id);
+    const nextTodos = todos.map((todo) => ({
+      ...todo,
+      linkedEventIds: (todo.linkedEventIds ?? []).filter((eid) => eid !== id),
+    }));
+    setData(syncLinkedItems(nextEvents, nextTodos));
+    setEditingEvent(undefined);
+  };
+
+  const handleDeleteTodo = (id: string) => {
+    const nextTodos = todos.filter((t) => t.id !== id);
+    const nextEvents = events.map((event) => ({
+      ...event,
+      linkedTodoIds: (event.linkedTodoIds ?? []).filter((tid) => tid !== id),
+    }));
+    setData(syncLinkedItems(nextEvents, nextTodos));
+    setEditingTodo(undefined);
   };
 
   return (
@@ -180,10 +255,10 @@ export default function HomePage() {
       <section className="workspace-simple">
         <header className="page-header panel">
           <div>
-            <h1>人事科办公助手</h1>
+            <h1>办公助手</h1>
             <p>聚焦时间轴回溯、今日记录、待办跟进与快速检索。</p>
           </div>
-          <div className="page-header-actions">
+          <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
             <nav className="page-nav">
               <Link href="/" className="page-nav-link active">
                 时间轴
@@ -192,19 +267,23 @@ export default function HomePage() {
                 日历
               </Link>
             </nav>
+
+            {/* 同步按钮 → 弹出设置面板 */}
             <button
               className="ghost-button"
               type="button"
               onClick={() => setShowSettingsPanel(true)}
-              title="云同步设置"
             >
               {cloudEnabled ? "☁️" : "⚙️"} 同步
             </button>
-            <div className="search-wide">
-              <input defaultValue="组织部 / 张主任 / 职级晋升" aria-label="全局搜索" />
-            </div>
-            <button className="ghost-button" type="button">
-              导出 Excel
+
+            {/* 导出 Excel 按钮 → 弹出设置面板 */}
+            <button
+              className="ghost-button"
+              type="button"
+              onClick={() => setShowExportPanel(true)}
+            >
+              📊 导出Excel
             </button>
           </div>
         </header>
@@ -214,8 +293,14 @@ export default function HomePage() {
             <section className="grid overview-grid">
               <article className="panel section-card">
                 <div className="section-head section-head-tight">
-                  <div>
+                  <div style={{ display: "flex", alignItems: "flex-end", gap: "6px" }}>
                     <h2>今日待办</h2>
+                    <HelpIcon tips={[
+                      "显示今日需要跟进的待办任务，按优先级排列。",
+                      "点击\"📝 快速记录工作\"添加新的工作记录。",
+                      "点击\"+ 添加任务\"创建新的待办任务。",
+                      "点击时间轴上的卡片可直接编辑或删除。",
+                    ]} />
                   </div>
                   <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
                     <button
@@ -272,74 +357,75 @@ export default function HomePage() {
             <section className="grid overview-grid">
               <article className="panel section-card">
                 <div className="section-head section-head-tight">
-                  <div>
-                    <h2>数据管理</h2>
-                  </div>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={handleExportData}
-                      className="ghost-button"
-                      type="button"
-                    >
-                      📥 导出数据
-                    </button>
-                    <label className="ghost-button cursor-pointer" style={{ margin: 0 }}>
-                      📤 导入数据
-                      <input
-                        type="file"
-                        accept=".json"
-                        onChange={handleImportData}
-                        style={{ display: 'none' }}
-                      />
-                    </label>
-                    <button
-                      onClick={handleClearData}
-                      className="ghost-button"
-                      type="button"
-                      style={{ color: '#dc2626' }}
-                    >
-                      🗑️ 清空数据
-                    </button>
-                  </div>
-                </div>
-                
-                {importError && (
-                  <div style={{ 
-                    marginBottom: '12px', 
-                    padding: '8px 12px', 
-                    background: '#fef2f2', 
-                    border: '1px solid #fecaca', 
-                    borderRadius: '6px',
-                    color: '#dc2626',
-                    fontSize: '0.875rem'
-                  }}>
-                    ❌ {importError}
-                  </div>
-                )}
-                
-                <p style={{ fontSize: '0.875rem', color: 'var(--muted)' }}>
-                  💡 数据自动保存到浏览器本地存储。您可以导出为 JSON 文件备份，或从备份文件导入。
-                </p>
-              </article>
-            </section>
-
-            <section className="grid overview-grid">
-              <article className="panel section-card">
-                <div className="section-head section-head-tight">
-                  <div>
+                  <div style={{ display: "flex", alignItems: "flex-end", gap: "6px" }}>
                     <h2>时间轴</h2>
-                    <p className="timeline-note">在时间轴区域滚轮可直接放缩；任务过密时会自动避让并压缩为标题。</p>
+                    <HelpIcon tips={[
+                      "🖱 滚轮：缩放时间轴（3% ~ 100%，即1天 ~ 30天）",
+                      "🖱 拖拽滚动条：移动时间窗口",
+                      "👆 点击卡片：编辑工作记录 / 待办",
+                      "📌 菱形标记：待办任务（橙色虚线卡片）",
+                      "● 圆点标记：工作记录（实线卡片）",
+                    ]} />
+                  </div>
+                  <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                    <button
+                      className="axis-today-button"
+                      type="button"
+                      onClick={handleTodayClick}
+                      title="单击回到今天30天视图 · 双击选择日期"
+                    >
+                      今天
+                    </button>
+                    {showTodayPicker && (
+                      <input
+                        type="date"
+                        className="today-date-picker-inline"
+                        value={new Date().toISOString().slice(0, 10)}
+                        onChange={(e) => handleTodayPickerChange(e.target.value)}
+                        onBlur={() => setShowTodayPicker(false)}
+                        autoFocus
+                      />
+                    )}
+                    <button
+                      className="axis-today-button"
+                      type="button"
+                      onClick={handleDaysClick}
+                      title="单击恢复3天视图 · 双击自定义天数"
+                    >
+                      {Math.round(visibleDays * 10) / 10}天
+                    </button>
+                    {showDaysInput && (
+                      <input
+                        type="number"
+                        className="today-date-picker-inline"
+                        style={{ width: 60 }}
+                        value={customDays}
+                        min={1}
+                        max={30}
+                        step={0.5}
+                        onChange={(e) => setCustomDays(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === "Enter") handleCustomDaysSubmit(); }}
+                        onBlur={handleCustomDaysSubmit}
+                        autoFocus
+                      />
+                    )}
                   </div>
                 </div>
-                <DayTimeline events={events} linkedTodoTitles={linkedTodoTitles} />
+                <DayTimeline events={events} todos={todos} linkedTodoTitles={linkedTodoTitles} onEventClick={setEditingEvent} onTodoClick={setEditingTodo} scale={timelineScale} onScaleChange={setTimelineScale} scrollToTodayTrigger={scrollToTodayTrigger} scrollToDate={scrollToDate} />
               </article>
             </section>
 
             <section className="grid overview-grid">
               <article className="panel section-card">
                 <div className="section-head section-head-tight">
-                  <div>
+                  <div style={{ display: "flex", alignItems: "flex-end", gap: "6px" }}>
                     <h2>待办任务</h2>
+                    <HelpIcon tips={[
+                      "使用顶部下拉菜单按\"部门\"和\"联系人\"筛选待办。",
+                      "默认显示前3个待办，点击\"展开全部\"查看所有任务。",
+                      "点击任意待办卡片可编辑内容或删除。",
+                      "待办支持设置优先级、状态、截止时间和子任务拆分。",
+                    ]} />
                   </div>
                   <div className="filters">
                     <select value={departmentFilter} onChange={(event) => setDepartmentFilter(event.target.value)}>
@@ -358,7 +444,7 @@ export default function HomePage() {
                     </select>
                   </div>
                 </div>
-              <TodoTree nodes={todoTree} linkedEventTitles={linkedEventTitles} maxDisplay={showAllTodos ? undefined : 3} />
+              <TodoTree nodes={todoTree} linkedEventTitles={linkedEventTitles} maxDisplay={showAllTodos ? undefined : 3} onTodoClick={setEditingTodo} />
               {todoTree.length > 3 && (
                 <button 
                   className="ghost-button" 
@@ -375,8 +461,14 @@ export default function HomePage() {
             <section className="grid overview-grid">
               <article className="panel section-card">
                 <div className="section-head section-head-tight">
-                  <div>
+                  <div style={{ display: "flex", alignItems: "flex-end", gap: "6px" }}>
                     <h2>今日工作记录</h2>
+                    <HelpIcon tips={[
+                      "以时间线形式展示今日新增的工作记录。",
+                      "点击\"📝 快速记录工作\"添加新的工作记录。",
+                      "每条记录包含标题、详情、标签和关联待办。",
+                      "点击时间轴上的记录卡片可编辑或删除。",
+                    ]} />
                   </div>
                 </div>
                 <DiaryTimeline events={todayRecords} />
@@ -386,8 +478,14 @@ export default function HomePage() {
             <section className="grid overview-grid">
               <article className="panel section-card">
                 <div className="section-head section-head-tight">
-                  <div>
+                  <div style={{ display: "flex", alignItems: "flex-end", gap: "6px" }}>
                     <h2>搜索结果</h2>
+                    <HelpIcon tips={[
+                      "输入关键词后自动搜索匹配的待办和工作记录。",
+                      "搜索范围包括标题、内容和标签。",
+                      "结果按类型（待办 / 事件）分组显示。",
+                      "清空搜索框可恢复默认列表。",
+                    ]} />
                   </div>
                 </div>
                 <SearchPanel results={searchResults} query={searchQuery} onQueryChange={setSearchQuery} />
@@ -406,6 +504,8 @@ export default function HomePage() {
           events={events}
           todos={todos}
           linkedTodoTitles={linkedTodoTitles}
+          customTags={customTags}
+          onTagCreated={handleTagCreated}
           onSave={handleSaveWorkRecord}
           onClose={() => setShowWorkRecordPanel(false)}
         />
@@ -413,9 +513,37 @@ export default function HomePage() {
 
       {showTaskFormPanel && (
         <TaskFormPanel
-          events={events}
+          customTags={customTags}
+          onTagCreated={handleTagCreated}
           onSave={handleSaveTask}
           onClose={() => setShowTaskFormPanel(false)}
+        />
+      )}
+
+      {/* 编辑工作记录（从时间轴点击进入） */}
+      {editingEvent && (
+        <WorkRecordPanel
+          events={events}
+          todos={todos}
+          linkedTodoTitles={linkedTodoTitles}
+          editEvent={editingEvent}
+          customTags={customTags}
+          onTagCreated={handleTagCreated}
+          onSave={handleSaveWorkRecord}
+          onDelete={handleDeleteEvent}
+          onClose={() => setEditingEvent(undefined)}
+        />
+      )}
+
+      {/* 编辑任务（从待办树点击进入） */}
+      {editingTodo && (
+        <TaskFormPanel
+          editTodo={editingTodo}
+          customTags={customTags}
+          onTagCreated={handleTagCreated}
+          onSave={handleSaveTask}
+          onDelete={handleDeleteTodo}
+          onClose={() => setEditingTodo(undefined)}
         />
       )}
 
@@ -435,6 +563,14 @@ export default function HomePage() {
             setShowSettingsPanel(false);
             setCloudEnabled(loadSettings() !== null);
           }}
+        />
+      )}
+
+      {showExportPanel && (
+        <ExportPanel
+          events={events}
+          todos={todos}
+          onClose={() => setShowExportPanel(false)}
         />
       )}
     </main>

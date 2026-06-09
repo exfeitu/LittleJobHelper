@@ -1,26 +1,53 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { ExportPanel } from "@/components/export-panel";
+import { HelpIcon } from "@/components/help-icon";
+import { SettingsPanel } from "@/components/settings-panel";
+import { loadAndMigrateFromStorage, loadSettings, saveEventsToStorage, saveTodosToStorage } from "@/lib/storage";
 import { sampleEvents, sampleTodos } from "@/lib/sample-data";
 import { formatDateTime, formatDiaryDate, getTodayFocus, syncLinkedItems } from "@/lib/utils";
 import { EventItem, Priority, TodoItem, TodoStatus } from "@/types";
 
-const calendarFormDefault = {
-  title: "",
-  date: "2026-04-14",
-  startTime: "09:00",
-  endTime: "10:00",
-  detail: "",
-  tags: "",
-  priority: "medium" as Priority,
-  status: "pending" as TodoStatus,
-};
+function todayStr(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function makeCalendarFormDefault(date: string) {
+  return {
+    title: "",
+    date,
+    startTime: "09:00",
+    endTime: "10:00",
+    detail: "",
+    tags: "",
+    priority: "medium" as Priority,
+    status: "pending" as TodoStatus,
+  };
+}
 
 export default function CalendarPage() {
-  const [{ events, todos }, setData] = useState(() => syncLinkedItems(sampleEvents, sampleTodos));
-  const [selectedDate, setSelectedDate] = useState("2026-04-13");
-  const [form, setForm] = useState(calendarFormDefault);
+  const [{ events, todos }, setData] = useState(() => {
+    const stored = loadAndMigrateFromStorage();
+    if (stored.events.length > 0 || stored.todos.length > 0) {
+      return syncLinkedItems(stored.events, stored.todos);
+    }
+    return syncLinkedItems(sampleEvents, sampleTodos);
+  });
+  const today = todayStr();
+  const [selectedDate, setSelectedDate] = useState(today);
+  const [form, setForm] = useState(() => makeCalendarFormDefault(today));
+  const [showSettingsPanel, setShowSettingsPanel] = useState(false);
+  const [showExportPanel, setShowExportPanel] = useState(false);
+  const [cloudEnabled, setCloudEnabled] = useState(() => loadSettings() !== null);
+
+  // 数据变更时自动保存到 LocalStorage
+  useEffect(() => {
+    saveEventsToStorage(events);
+    saveTodosToStorage(todos);
+  }, [events, todos]);
 
   const eventsByDate = useMemo(() => events.filter((event) => event.startTime.startsWith(selectedDate)), [events, selectedDate]);
   const todosByDate = useMemo(() => todos.filter((todo) => todo.dueDate?.startsWith(selectedDate)), [todos, selectedDate]);
@@ -61,9 +88,12 @@ export default function CalendarPage() {
       linkedEventIds: [eventId],
     };
 
-    setData(syncLinkedItems([...events, newEvent], [...todos, newTodo]));
+    const synced = syncLinkedItems([...events, newEvent], [...todos, newTodo]);
+    setData(synced);
+    saveEventsToStorage(synced.events);
+    saveTodosToStorage(synced.todos);
     setSelectedDate(form.date);
-    setForm(calendarFormDefault);
+    setForm(makeCalendarFormDefault(form.date));
   };
 
   return (
@@ -71,10 +101,10 @@ export default function CalendarPage() {
       <section className="workspace-simple">
         <header className="page-header panel">
           <div>
-            <h1>日历视图</h1>
-            <p>按天查看日程，新增事件时同步生成待办。</p>
+            <h1>办公助手</h1>
+            <p>聚焦时间轴回溯、今日记录、待办跟进与快速检索。</p>
           </div>
-          <div className="page-header-actions">
+          <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
             <nav className="page-nav">
               <Link href="/" className="page-nav-link">
                 时间轴
@@ -83,6 +113,25 @@ export default function CalendarPage() {
                 日历
               </Link>
             </nav>
+
+            {/* 同步按钮 → 弹出设置面板 */}
+            <button
+              className="ghost-button"
+              type="button"
+              onClick={() => setShowSettingsPanel(true)}
+            >
+              {cloudEnabled ? "☁️" : "⚙️"} 同步
+            </button>
+
+            {/* 导出 Excel 按钮 */}
+            <button
+              className="ghost-button"
+              type="button"
+              onClick={() => setShowExportPanel(true)}
+            >
+              📊 导出Excel
+            </button>
+
             <input
               className="calendar-date-picker"
               type="date"
@@ -95,10 +144,16 @@ export default function CalendarPage() {
         <div className="calendar-layout">
           <section className="panel section-card calendar-main">
             <div className="section-head section-head-tight">
-              <div>
+              <div style={{ display: "flex", alignItems: "flex-end", gap: "6px" }}>
                 <h2>{formatDiaryDate(`${selectedDate}T09:00:00`)}</h2>
-                <p className="timeline-note">当天日程和待办会在这里汇总显示。</p>
+                <HelpIcon tips={[
+                  "左侧\"当日日程\"显示选中日期的时间安排。",
+                  "右侧\"当日待办\"显示截止日期为当天的任务。",
+                  "通过顶部日期选择器切换查看日期。",
+                  "点击\"添加日程\"可创建新的日程和关联待办。",
+                ]} />
               </div>
+              <p className="timeline-note">当天日程和待办会在这里汇总显示。</p>
             </div>
 
             <div className="calendar-columns">
@@ -143,8 +198,14 @@ export default function CalendarPage() {
           <aside className="calendar-side">
             <section className="panel section-card">
               <div className="section-head section-head-tight">
-                <div>
+                <div style={{ display: "flex", alignItems: "flex-end", gap: "6px" }}>
                   <h2>添加日程</h2>
+                  <HelpIcon tips={[
+                    "填写日程标题、日期和时间段信息。",
+                    "选择优先级和状态生成关联待办。",
+                    "标签用于分类检索，多个标签用逗号分隔。",
+                    "保存后同时创建日程记录和关联待办任务。",
+                  ]} />
                 </div>
               </div>
               <div className="task-form">
@@ -177,8 +238,14 @@ export default function CalendarPage() {
 
             <section className="panel section-card">
               <div className="section-head section-head-tight">
-                <div>
+                <div style={{ display: "flex", alignItems: "flex-end", gap: "6px" }}>
                   <h2>重点待办</h2>
+                  <HelpIcon tips={[
+                    "展示所有标记为\"重点关注\"的待办任务。",
+                    "限时 6 条，优先显示截止日期最紧迫的任务。",
+                    "在主页\"今日待办\"中可管理待办的优先级。",
+                    "完成的待办会自动从列表中移除。",
+                  ]} />
                 </div>
               </div>
               <div className="calendar-list">
@@ -194,6 +261,32 @@ export default function CalendarPage() {
           </aside>
         </div>
       </section>
+
+      {showSettingsPanel && (
+        <SettingsPanel
+          events={events}
+          todos={todos}
+          onDataLoaded={(loadedEvents, loadedTodos) => {
+            const synced = syncLinkedItems(loadedEvents, loadedTodos);
+            setData(synced);
+            saveEventsToStorage(synced.events);
+            saveTodosToStorage(synced.todos);
+            setShowSettingsPanel(false);
+          }}
+          onClose={() => {
+            setShowSettingsPanel(false);
+            setCloudEnabled(loadSettings() !== null);
+          }}
+        />
+      )}
+
+      {showExportPanel && (
+        <ExportPanel
+          events={events}
+          todos={todos}
+          onClose={() => setShowExportPanel(false)}
+        />
+      )}
     </main>
   );
 }

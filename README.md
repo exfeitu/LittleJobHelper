@@ -12,12 +12,14 @@
 - **文字日记视图**：当天工作记录按时间段展示
 - **日历视图**：按天查看日程/待办，添加日程时自动生成关联待办
 - **全局搜索**：关键词匹配 + 类型筛选
-- **数据持久化**：LocalStorage 自动保存 + JSON 文件导入/导出
+- **数据持久化**：LocalStorage 自动保存 + JSON/CSV 文件导出 + JSON 文件导入
+- **GitHub Gist 云同步**：数据自动备份到私有 Gist，支持跨设备恢复，自带版本历史
+- **数据版本迁移**：旧版本数据自动升级，加字段不怕兼容性问题
 - **GitHub Pages 自动部署**：push master 即构建发布
 
 ## 技术栈
 
-Next.js 16（静态导出） + TypeScript 5.8 + 手写 CSS + LocalStorage
+Next.js 16（静态导出） + TypeScript 5.8 + 手写 CSS + LocalStorage + GitHub Gist API
 
 ## 运行方式
 
@@ -35,5 +37,6 @@ npm run build        # 静态导出到 out/
 
 1. 补齐编辑/删除/状态变更等 CRUD 操作
 2. 实现提醒通知功能
-3. Excel 真正导出
+3. Excel 富格式导出（合并单元格等）
 4. 日历联动优化
+5. iOS/Android 快捷指令集成

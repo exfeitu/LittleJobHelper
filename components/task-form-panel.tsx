@@ -1,33 +1,36 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { EventItem, Priority, TodoItem, TodoStatus } from "@/types";
+import { Priority, TodoItem, TodoStatus } from "@/types";
 
 type TaskFormPanelProps = {
-  events: EventItem[];
-  onSave: (newTodo: TodoItem, linkedEventIds: string[]) => void;
+  editTodo?: TodoItem;
+  customTags?: string[];
+  onTagCreated?: (tag: string) => void;
+  onSave: (todo: TodoItem) => void;
+  onDelete?: (id: string) => void;
   onClose: () => void;
 };
 
-const PRESET_TAGS = ["党建", "人事", "纪检", "编制", "档案", "外出", "会议", "其他"];
+const BASE_TAGS = ["党建", "人事", "纪检", "编制", "档案", "外出", "会议", "其他"];
 
-export function TaskFormPanel({ events, onSave, onClose }: TaskFormPanelProps) {
-  const [title, setTitle] = useState("");
-  const [dueDate, setDueDate] = useState("");
-  const [priority, setPriority] = useState<Priority>("medium");
-  const [status, setStatus] = useState<TodoStatus>("pending");
-  const [department, setDepartment] = useState("");
-  const [contactPerson, setContactPerson] = useState("");
-  const [remarks, setRemarks] = useState("");
-  const [selectedTags, setSelectedTags] = useState<string[]>([]);
-  const [customTagInput, setCustomTagInput] = useState("");
-  const [linkedEventIds, setLinkedEventIds] = useState<string[]>([]);
-  const [validationError, setValidationError] = useState<string | null>(null);
-
-  const activeEvents = useMemo(
-    () => events.filter((e) => e.title),
-    [events],
+export function TaskFormPanel({ editTodo, customTags = [], onTagCreated, onSave, onDelete, onClose }: TaskFormPanelProps) {
+  const isEdit = !!editTodo;
+  const allTags = useMemo(
+    () => Array.from(new Set([...BASE_TAGS, ...customTags])),
+    [customTags],
   );
+
+  const [title, setTitle] = useState(editTodo?.title ?? "");
+  const [dueDate, setDueDate] = useState(editTodo?.dueDate?.slice(0, 16) ?? "");
+  const [priority, setPriority] = useState<Priority>(editTodo?.priority ?? "medium");
+  const [status, setStatus] = useState<TodoStatus>(editTodo?.status ?? "pending");
+  const [department, setDepartment] = useState(editTodo?.department ?? "");
+  const [contactPerson, setContactPerson] = useState(editTodo?.contactPerson ?? "");
+  const [remarks, setRemarks] = useState(editTodo?.remarks ?? "");
+  const [selectedTags, setSelectedTags] = useState<string[]>(editTodo?.tags ?? []);
+  const [customTagInput, setCustomTagInput] = useState("");
+  const [validationError, setValidationError] = useState<string | null>(null);
 
   const toggleTag = (tag: string) => {
     setSelectedTags((prev) =>
@@ -41,13 +44,8 @@ export function TaskFormPanel({ events, onSave, onClose }: TaskFormPanelProps) {
     if (!selectedTags.includes(trimmed)) {
       setSelectedTags((prev) => [...prev, trimmed]);
     }
+    onTagCreated?.(trimmed);
     setCustomTagInput("");
-  };
-
-  const toggleLinkedEvent = (eventId: string) => {
-    setLinkedEventIds((prev) =>
-      prev.includes(eventId) ? prev.filter((id) => id !== eventId) : [...prev, eventId],
-    );
   };
 
   const handleSave = () => {
@@ -63,8 +61,8 @@ export function TaskFormPanel({ events, onSave, onClose }: TaskFormPanelProps) {
       allTags.push(customTagInput.trim());
     }
 
-    const newTodo: TodoItem = {
-      id: `todo-${Date.now()}`,
+    const todo: TodoItem = {
+      id: editTodo?.id ?? `todo-${Date.now()}`,
       title: title.trim(),
       dueDate: dueDate || undefined,
       priority,
@@ -73,12 +71,13 @@ export function TaskFormPanel({ events, onSave, onClose }: TaskFormPanelProps) {
       department: department.trim() || undefined,
       contactPerson: contactPerson.trim() || undefined,
       remarks: remarks.trim() || undefined,
-      parentId: null,
+      parentId: editTodo?.parentId ?? null,
       pinnedToToday: status !== "completed" && status !== "cancelled",
-      linkedEventIds: linkedEventIds.length > 0 ? linkedEventIds : undefined,
+      linkedEventIds: editTodo?.linkedEventIds,
+      steps: editTodo?.steps,
     };
 
-    onSave(newTodo, linkedEventIds);
+    onSave(todo);
   };
 
   const handleOverlayClick = (e: React.MouseEvent) => {
@@ -89,7 +88,7 @@ export function TaskFormPanel({ events, onSave, onClose }: TaskFormPanelProps) {
     <div className="modal-overlay" onClick={handleOverlayClick}>
       <div className="modal-panel task-form-panel">
         <div className="modal-header">
-          <h2>➕ 新建任务</h2>
+          <h2>{isEdit ? "✏️ 编辑任务" : "➕ 新建任务"}</h2>
           <button className="modal-close-button" type="button" onClick={onClose} aria-label="关闭">
             ✕
           </button>
@@ -110,18 +109,9 @@ export function TaskFormPanel({ events, onSave, onClose }: TaskFormPanelProps) {
           />
         </div>
 
-        {/* 时间 & 优先级 */}
+        {/* 优先级 & 状态 */}
         <div className="record-section">
           <div className="task-form-grid">
-            <div>
-              <label className="record-label" htmlFor="task-duedate">截止时间</label>
-              <input
-                id="task-duedate"
-                type="datetime-local"
-                value={dueDate}
-                onChange={(e) => setDueDate(e.target.value)}
-              />
-            </div>
             <div>
               <label className="record-label" htmlFor="task-priority">优先级</label>
               <select
@@ -134,12 +124,6 @@ export function TaskFormPanel({ events, onSave, onClose }: TaskFormPanelProps) {
                 <option value="low">🟢 低优先级</option>
               </select>
             </div>
-          </div>
-        </div>
-
-        {/* 状态 & 部门 */}
-        <div className="record-section">
-          <div className="task-form-grid">
             <div>
               <label className="record-label" htmlFor="task-status">状态</label>
               <select
@@ -152,6 +136,21 @@ export function TaskFormPanel({ events, onSave, onClose }: TaskFormPanelProps) {
                 <option value="completed">已完成</option>
                 <option value="cancelled">已取消</option>
               </select>
+            </div>
+          </div>
+        </div>
+
+        {/* 截止时间 & 部门 */}
+        <div className="record-section">
+          <div className="task-form-grid">
+            <div>
+              <label className="record-label" htmlFor="task-duedate">截止时间</label>
+              <input
+                id="task-duedate"
+                type="datetime-local"
+                value={dueDate}
+                onChange={(e) => setDueDate(e.target.value)}
+              />
             </div>
             <div>
               <label className="record-label" htmlFor="task-dept">部门</label>
@@ -180,7 +179,7 @@ export function TaskFormPanel({ events, onSave, onClose }: TaskFormPanelProps) {
         <div className="record-section">
           <label className="record-label">标签</label>
           <div className="record-tags-row">
-            {PRESET_TAGS.map((tag) => (
+            {allTags.map((tag) => (
               <button
                 key={tag}
                 type="button"
@@ -209,47 +208,6 @@ export function TaskFormPanel({ events, onSave, onClose }: TaskFormPanelProps) {
               </button>
             )}
           </div>
-          {selectedTags.filter((t) => !PRESET_TAGS.includes(t)).length > 0 && (
-            <div className="record-custom-tags-list">
-              {selectedTags
-                .filter((t) => !PRESET_TAGS.includes(t))
-                .map((tag) => (
-                  <span key={tag} className="chip-button chip-tag chip-tag-active">
-                    {tag}
-                    <button
-                      type="button"
-                      className="chip-remove"
-                      onClick={() => toggleTag(tag)}
-                      aria-label={`移除标签 ${tag}`}
-                    >
-                      ✕
-                    </button>
-                  </span>
-                ))}
-            </div>
-          )}
-        </div>
-
-        {/* 关联事件 */}
-        <div className="record-section">
-          <label className="record-label">关联日程（可选）</label>
-          {activeEvents.length > 0 ? (
-            <div className="record-tags-row">
-              {activeEvents.map((event) => (
-                <button
-                  key={event.id}
-                  type="button"
-                  className={`chip-button chip-tag ${linkedEventIds.includes(event.id) ? "chip-tag-active" : ""}`}
-                  onClick={() => toggleLinkedEvent(event.id)}
-                  title={`${event.title}（${event.startTime.slice(0, 16)}）`}
-                >
-                  📅 {event.title.length > 10 ? event.title.slice(0, 10) + "…" : event.title}
-                </button>
-              ))}
-            </div>
-          ) : (
-            <p style={{ fontSize: "0.85rem", color: "var(--muted)" }}>暂无日程可关联</p>
-          )}
         </div>
 
         {/* 备注 */}
@@ -272,11 +230,26 @@ export function TaskFormPanel({ events, onSave, onClose }: TaskFormPanelProps) {
 
         {/* 操作栏 */}
         <div className="record-actions">
+          {isEdit && onDelete && (
+            <button
+              type="button"
+              className="ghost-button"
+              style={{ color: "#dc2626", marginRight: "auto" }}
+              onClick={() => {
+                if (confirm("确定要删除这个任务吗？此操作不可恢复。")) {
+                  onDelete(editTodo!.id);
+                  onClose();
+                }
+              }}
+            >
+              🗑️ 删除任务
+            </button>
+          )}
           <button type="button" className="ghost-button" onClick={onClose}>
             取消
           </button>
           <button type="button" className="primary-button" onClick={handleSave}>
-            保存任务
+            {isEdit ? "保存修改" : "保存任务"}
           </button>
         </div>
       </div>

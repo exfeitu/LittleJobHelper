@@ -10,26 +10,32 @@ export function SearchPanel({ results, query, onQueryChange }: SearchPanelProps)
   return (
     <div className="search-results-wrap">
       <div className="search-box">
-        <input value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder="搜索待办、日程、联系人、标签" />
+        <input value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder="搜索待办、工作记录、联系人、标签" />
       </div>
       <div className="search-results">
-        {results.map((result) => (
-          <article key={result.id} className="search-card">
-            <div className="search-card-top">
-              <span className={`pill pill-${result.kind}`}>{result.kind === "todo" ? "待办" : "日程"}</span>
-              <span className="search-date">{result.dateLabel}</span>
-            </div>
-            <h4>{result.title}</h4>
-            <p>{result.snippet}</p>
-            <div className="tag-row">
-              {result.tags.map((tag) => (
-                <span key={tag} className="tag chip">
-                  {tag}
-                </span>
-              ))}
-            </div>
-          </article>
-        ))}
+        {results.length > 0 ? (
+          results.map((result) => (
+            <article key={result.id} className="search-card">
+              <div className="search-card-top">
+                <span className={`pill pill-${result.kind}`}>{result.kind === "todo" ? "待办" : "工作记录"}</span>
+                <span className="search-date">{result.dateLabel}</span>
+              </div>
+              <h4>{result.title}</h4>
+              <p>{result.snippet}</p>
+              <div className="tag-row">
+                {result.tags.map((tag) => (
+                  <span key={tag} className="tag chip">
+                    {tag}
+                  </span>
+                ))}
+              </div>
+            </article>
+          ))
+        ) : (
+          <p style={{ color: "var(--muted)", textAlign: "center", padding: "20px 0" }}>
+            {query.trim() ? "未找到匹配结果" : "暂无数据"}
+          </p>
+        )}
       </div>
     </div>
   );
