@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { DayTimeline } from "@/components/day-timeline";
 import { DiaryTimeline } from "@/components/diary-timeline";
 import { SearchPanel } from "@/components/search-panel";
@@ -13,81 +13,14 @@ import { ExportPanel } from "@/components/export-panel";
 import { HelpIcon } from "@/components/help-icon";
 import { departmentOptions } from "@/lib/sample-data";
 import { buildTodoTree, formatDateTime, getFilterValues, getTodayFocus, syncLinkedItems } from "@/lib/utils";
-import { loadAndMigrateFromStorage, saveEventsToStorage, saveTodosToStorage, pushToCloud, pullAndMerge, loadSettings, loadCustomTags, addCustomTag, saveCustomTags } from "@/lib/storage";
 import { EventItem, SearchResult, TodoItem } from "@/types";
+import { useAppData } from "@/hooks/use-app-data";
 
 export default function HomePage() {
-  const [isInitialized, setIsInitialized] = useState(false);
-  const [{ events, todos }, setData] = useState(() => {
-    const stored = loadAndMigrateFromStorage();
-
-    if (stored.events.length > 0 || stored.todos.length > 0) {
-      return syncLinkedItems(stored.events, stored.todos);
-    }
-
-    return { events: [], todos: [] };
-  });
-  
-  useEffect(() => {
-    setIsInitialized(true);
-  }, []);
-
-  useEffect(() => {
-    if (isInitialized) {
-      saveEventsToStorage(events);
-      saveTodosToStorage(todos);
-    }
-  }, [events, todos, isInitialized]);
-
-  // 初始化时自动从云端拉取并合并（多端同步）
-  useEffect(() => {
-    if (!isInitialized) return;
-
-    const settings = loadSettings();
-    if (!settings) return;
-
-    pullAndMerge(events, todos, customTags).then((result) => {
-      if (result) {
-        // 云端标签合并到本地
-        if (result.customTags.length > customTags.length) {
-          setCustomTags(result.customTags);
-          saveCustomTags(result.customTags);
-        }
-        if (result.mergedFromRemote) {
-          const synced = syncLinkedItems(result.events, result.todos);
-          setData(synced);
-          saveEventsToStorage(synced.events);
-          saveTodosToStorage(synced.todos);
-        }
-      }
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isInitialized]);
-
-  // 云同步自动推送（防抖 3 秒），推送前会先拉取合并
-  useEffect(() => {
-    if (!isInitialized) return;
-
-    const settings = loadSettings();
-    if (!settings) return;
-
-    const timer = setTimeout(async () => {
-      const result = await pushToCloud(events, todos, customTags);
-      // 如果推送过程中发现远端有新标签，更新本地
-      if (result.customTags.length > customTags.length) {
-        setCustomTags(result.customTags);
-        saveCustomTags(result.customTags);
-      }
-      // 如果推送过程中发现远端有新数据，更新本地状态
-      if (result.mergedFromRemote) {
-        // 远端数据已合并，需要回写到 local state
-        // 这里通过重新加载本地存储来实现（pushToCloud 内部已合并推送）
-        // 我们只需要在下次存储变更时自然同步即可
-      }
-    }, 3000);
-
-    return () => clearTimeout(timer);
-  }, [events, todos, isInitialized]);
+  const {
+    events, todos, customTags, isInitialized, cloudEnabled,
+    addCustomTag, deleteCustomTag, setData, refreshCloudStatus,
+  } = useAppData();
 
   const [departmentFilter, setDepartmentFilter] = useState<string>("全部部门");
   const [contactFilter, setContactFilter] = useState<string>("全部联系人");
@@ -96,11 +29,9 @@ export default function HomePage() {
   const [showWorkRecordPanel, setShowWorkRecordPanel] = useState(false);
   const [showTaskFormPanel, setShowTaskFormPanel] = useState(false);
   const [showSettingsPanel, setShowSettingsPanel] = useState(false);
-  const [cloudEnabled, setCloudEnabled] = useState(() => loadSettings() !== null);
   const [showExportPanel, setShowExportPanel] = useState(false);
   const [editingEvent, setEditingEvent] = useState<EventItem | undefined>(undefined);
   const [editingTodo, setEditingTodo] = useState<TodoItem | undefined>(undefined);
-  const [customTags, setCustomTags] = useState<string[]>(() => loadCustomTags());
 
   // 时间轴缩放控制（状态提升到 header 工具栏）
   const [timelineScale, setTimelineScale] = useState(0.35);
@@ -171,17 +102,8 @@ export default function HomePage() {
     setTimelineScale(Math.min(MAX_SCALE, Math.max(MIN_SCALE, +(targetScale).toFixed(4))));
   }, [customDays]);
 
-  const handleTagCreated = (tag: string) => {
-    const updated = addCustomTag(tag);
-    setCustomTags(updated);
-    saveCustomTags(updated);
-  };
-
-  const handleTagDeleted = (tag: string) => {
-    const updated = customTags.filter((t) => t !== tag);
-    setCustomTags(updated);
-    saveCustomTags(updated);
-  };
+  const handleTagCreated = addCustomTag;
+  const handleTagDeleted = deleteCustomTag;
 
   const departmentChoices = useMemo(
     () => ["全部部门", ...Array.from(new Set([...departmentOptions, ...getFilterValues(todos, "department")]))],
@@ -606,14 +528,11 @@ export default function HomePage() {
           onDataLoaded={(loadedEvents, loadedTodos) => {
             const synced = syncLinkedItems(loadedEvents, loadedTodos);
             setData(synced);
-            // 立即保存到本地
-            saveEventsToStorage(synced.events);
-            saveTodosToStorage(synced.todos);
             setShowSettingsPanel(false);
           }}
           onClose={() => {
             setShowSettingsPanel(false);
-            setCloudEnabled(loadSettings() !== null);
+            refreshCloudStatus();
           }}
         />
       )}

@@ -1,274 +1,59 @@
 # AGENTS.md — Little Job Helper
 
-## 项目身份
-
-体制内人事科办公助手：单人使用的浏览器端工作回溯 + 待办管理工具。核心能力：精确到秒的时间轴记录、多级任务树、跨事件与待办的全局搜索。
+体制内人事科办公助手：单人浏览器端工具，Next.js 16 静态导出 + GitHub Pages 部署。
 
 ## 技术栈
 
-| 层 | 选型 | 备注 |
-|---|---|---|
-| 框架 | Next.js 16 (App Router) | `output: 'export'` 静态导出 |
-| 语言 | TypeScript 5.8 | strict 模式 |
-| 样式 | 手写 CSS | `globals.css`，约 1600 行，CSS 自定义属性 |
-| 存储 | 浏览器 LocalStorage + GitHub Gist 云同步 | 本地两个 key + 版本号 key；云端私有 Gist；含自动版本迁移 |
-| 部署 | GitHub Pages | `.github/workflows/deploy.yml` |
-| 包管理 | npm | `package-lock.json` |
-| Lint | ESLint 8 | `next/core-web-vitals` |
-
-**本项目没有**：数据库、后端服务、用户认证、CSS 框架（无 Tailwind）、组件库（无 MUI/Ant Design）、自动化测试（无 Jest/Vitest）、SSR、API Routes、Middleware。云同步通过 GitHub Gist API（纯 fetch，零依赖）实现。
-
-> 没有的东西和有的东西同等重要。不要擅自引入上述任何一项。
-
-## 配置文件速览
-
-| 文件 | 关键约束 |
+| 层 | 选型 |
 |---|---|
-| `next.config.mjs` | `output: 'export'` → 禁用 SSR/API Routes/Middleware/Image Optimization |
-| `tsconfig.json` | `strict: true`，路径别名 `@/*` 映射到项目根目录 |
-| `.eslintrc.json` | 继承 `next/core-web-vitals` |
-| `.github/workflows/deploy.yml` | push `master` → 构建 → 部署 GitHub Pages |
-| `package.json` | 开发端口 `10352`（`next dev -p 10352`） |
+| 框架 | Next.js 16 (App Router)，`output: 'export'` |
+| 语言 | TypeScript 5.8，strict 模式 |
+| 样式 | 手写 CSS，`globals.css`，无框架 |
+| 存储 | LocalStorage + GitHub Gist 云同步（纯 fetch） |
+| 部署 | GitHub Pages（`.github/workflows/deploy.yml`） |
+
+**本项目没有**：数据库、后端、SSR、API Routes、Tailwind、组件库、测试框架、新 npm 依赖。
+
+> 没有的东西和有的东西同等重要。不要擅自引入。
 
 ## 常用命令
 
 ```bash
-npm install          # 安装依赖
-npm run dev          # localhost:10352（端口在 package.json 中硬编码）
-npm run build        # 静态导出到 out/
-npm run lint         # ESLint
+npm run dev     # localhost:10352
+npm run build   # 静态导出到 out/
+npm run lint    # ESLint
 ```
 
-## 目录结构
-
-```
-.eslintrc.json              # ESLint 配置
-next.config.mjs             # Next.js 配置（静态导出 + 图片不优化）
-tsconfig.json               # TypeScript 配置（strict，路径别名 @/*）
-types.ts                    # 全局类型：EventItem, TodoItem, TodoTreeNode 等
-app/
-  layout.tsx                # 根布局：lang="zh-CN"，导入 globals.css
-  globals.css               # 全部样式（CSS 变量 + 手写类，无 Tailwind）
-  page.tsx                  # 首页（"use client"）：今日待办、今日记录、数据管理、时间轴、待办树、搜索
-  calendar/
-    page.tsx                # 日历页（"use client"）：按天查看日程/待办 + 添加日程表单
-components/
-  day-timeline.tsx          # 横向时间轴（缩放 0.16x~5.2x、视口固定7天、上下避让、日分隔线、光标中心缩放）
-  diary-timeline.tsx        # 文字日记时间轴（按时间段展示当天工作记录）
-  search-panel.tsx          # 搜索结果面板（类型筛选项 + 关键词匹配）
-  todo-tree.tsx             # 递归待办树（status 状态提升、step 进度展示）
-  work-record-panel.tsx     # 快速记录工作模态弹窗（时间段补录、标签 chip、关联待办）
-  task-form-panel.tsx       # 新建任务模态弹窗（chip 标签、关联日程、优先级/状态/部门/联系人）
-  settings-panel.tsx        # 云同步设置模态弹窗（GitHub Token 配置、推送/拉取、状态展示）
-  export-panel.tsx          # 导出设置模态弹窗（JSON/CSV 格式选择、数据预览、一键下载）
-lib/
-  storage.ts                # 副作用函数：LocalStorage 读写、JSON 文件导入/导出、GitHub Gist API 云同步、数据版本迁移
-  utils.ts                  # 纯函数：双向关联同步、树构建、排序、格式化
-  sample-data.ts            # 开发用示例数据（11 事件 + 7 待办），仅当 LocalStorage 为空时使用
-.github/workflows/
-  deploy.yml                # CI/CD：checkout → npm ci → npm run build → deploy-pages
-```
-
-## 核心类型
-
-所有类型定义在 `types.ts`，是项目的数据契约。
-
-```typescript
-EventItem {
-  id: string; startTime: string; endTime: string; title: string;
-  detail?: string; tags: string[]; linkedTodoIds?: string[];
-}
-TodoItem {
-  id: string; title: string; startTime?: string; dueDate?: string;
-  priority: "high" | "medium" | "low"; status: "pending" | "in_progress" | "completed" | "cancelled";
-  tags: string[]; department?: string; contactPerson?: string; remarks?: string;
-  parentId: string | null; pinnedToToday?: boolean;
-  linkedEventIds?: string[]; steps?: TodoStep[];
-}
-TodoTreeNode extends TodoItem { children: TodoTreeNode[]; computedStatus: TodoStatus }
-TodoStep { id: string; content: string; completed: boolean; scheduledTime?: string }
-SearchResult { id: string; kind: "event" | "todo"; title: string; snippet: string; dateLabel: string; tags: string[] }
-```
-
-**关键约束**：Event ↔ Todo 通过 `linkedTodoIds` ↔ `linkedEventIds` 双向关联。任何修改关联关系的操作都必须经过 `syncLinkedItems()`（位于 `lib/utils.ts`）来保持两端一致，否则会出现悬空引用。
-
-## 架构模式
-
-### 数据流（读 + 写）
-
-```
-读取：
-  loadAndMigrateFromStorage() ──有数据──→ useState 初始化
-         │                                      │
-         │                        自动检测版本号，过期则 migrateData()
-         │                                      │
-          └──无数据──→ sample-data.ts ──────────┘
-                              │
-                    syncLinkedItems(events, todos)   ← 双向关联同步
-                              │
-                    ┌─────────┼──────────┐
-                    ↓         ↓          ↓
-              filteredTodos  events   searchResults
-                    ↓
-              buildTodoTree()
-                    ↓
-              getTodayFocus()
-                    ↓
-              组件渲染（所有派生计算通过 useMemo）
-
-写回：
-  用户操作 → setData() → syncLinkedItems() → useState 更新
-                                              │
-  useEffect（isInitialized 守卫为 true 时）→ saveEventsToStorage() + saveTodosToStorage()
-                                              │
-  useEffect（3s 防抖，isInitialized 后）──→ pushToCloud()（若已配置云同步）
-```
-
-**isInitialized 守卫的作用**：防止组件首次挂载时将 sample data 覆盖进 LocalStorage。在 `isInitialized` 变为 `true` 之前，useEffect 不会执行写回。
-
-### 组件约定
-
-- 所有组件文件以 `"use client"` 开头 — 因为静态导出无 SSR，服务端渲染没有意义
-- 组件 Props 类型定义在组件文件内部（不放入 `types.ts`），用 `type` 而非 `interface`
-- **展示型组件**（DayTimeline、DiaryTimeline、TodoTree、SearchPanel）纯展示 + 回调，状态集中在 `page.tsx` 管理
-- **模态弹窗组件**（WorkRecordPanel、TaskFormPanel）自管理表单状态，通过 `onSave` 回调将最终数据传回 `page.tsx`，由 `page.tsx` 统一执行 `syncLinkedItems` + 写回 LocalStorage
-- 派生数据全部用 `useMemo` — 避免每次渲染重新构建树、排序、过滤
-
-### 标签系统
-
-项目使用统一的 chip 标签交互模式（预设 + 自定义）：
-
-- **预设标签**：`["党建", "人事", "纪检", "编制", "档案", "外出", "会议", "其他"]`，定义在各模态弹窗组件内部
-- **交互**：`.chip-button.chip-tag` 点击切换选中态（`.chip-tag-active`），支持多选
-- **自定义标签**：文本输入框 + "添加"按钮或回车键，以 chip 形式追加到已选列表，可单独移除
-- **保存时**：预设标签和自定义标签合并为 `tags: string[]`，无标签时默认 `["其他"]`
-
-### 时间轴缩放系统
-
-横向时间轴使用"视口固定 + 缩放改变可见范围"模型：
-
-- **视口**：始终填满容器宽度，默认显示 7 天（`BASE_VISIBLE_DAYS = 7`）
-- **缩放**：`visibleDays = 7 / scale`，缩小→更多天可见，放大→聚焦细节
-- **滚动**：水平滚动条移动时间窗口（shell 宽度 = `总天数 / 可见天数 × 容器宽`）
-- **光标中心缩放**：缩放时以鼠标位置为锚点，保持该时间点不动
-- **默认位置**：首次渲染自动滚动到今天居中，工具栏"今天"按钮可随时复位
-
-### CSS 约定
-
-- 颜色/间距等令牌使用 CSS 自定义属性：`var(--text)`, `var(--muted)`, `var(--border-color)` 等，定义在 `globals.css` 的 `:root` 中
-- 类名语义化：`.line-timeline`, `.todo-card`, `.search-results-wrap`
-- 内联 `style` 仅用于运行时动态值（位置 `top`、颜色 `--event-color` 等），静态样式一律放 `globals.css`
-- **禁止引入 Tailwind 或任何 CSS 框架** — 原因：已有 1055 行手写 CSS，混用会破坏一致性
-
-### 工具函数约定
-
-- `lib/utils.ts` 必须是纯函数 — 无副作用、无 `window`/`document` 访问、无 `localStorage`。便于测试和复用。
-- `lib/storage.ts` 存放有副作用的函数 — `localStorage`、`FileReader`、`Blob`、`URL.createObjectURL`、`fetch`（Gist API）
-- 日期格式化统一用 `Intl.DateTimeFormat("zh-CN", ...)`，不引入 `moment`/`dayjs`
-
-### 数据版本迁移系统
-
-`lib/storage.ts` 顶部定义了 `CURRENT_DATA_VERSION`（当前为 1）和 `migrations` 数组。所有数据入口（LocalStorage 加载、Gist 拉取、文件导入）在读取数据后自动调用 `migrateData()`，将旧版本数据升级到当前版本。
-
-**新增/修改 types.ts 字段时的操作流程**：
-1. 在 `types.ts` 中添加/修改字段（可选字段用 `?`）
-2. 将 `CURRENT_DATA_VERSION` 加 1
-3. 在 `migrations` 数组末尾追加迁移函数（从旧版本到新版本的转换逻辑）
-4. 在使用新字段的组件中做好 `undefined` 兜底（`??` 默认值）
-5. 更新 `lib/utils.ts` 的 `exportRows()` 和 `lib/storage.ts` 的 `buildCsv()` 加上新字段
-
-## 禁止事项
+## 硬约束
 
 | # | 禁令 | 原因 |
 |---|---|---|
-| 1 | **不要引入任何 CSS 框架**（Tailwind、styled-components 等） | 项目已有完整的手写 CSS 体系，混用导致不可维护 |
-| 2 | **不要使用 SSR / API Routes / Middleware / Image Optimization** | `next.config.mjs` 设置了 `output: 'export'`，这些特性在静态导出下不可用 |
-| 3 | **不要添加数据库或后端依赖**（Supabase、Prisma 等） | 云同步已通过 GitHub Gist API 实现（纯 fetch，零依赖），不需要额外后端 |
-| 4 | **不要修改 `types.ts` 中已有字段的类型或语义** | 这是数据契约，修改会导致迁移函数失效和 LocalStorage 中的历史数据不兼容。如需改字段，必须同时追加 migration |
-| 5 | **不要修改 `package.json` 中的 `dev` 端口（10352）** | 端口已固定，改动会影响团队开发习惯 |
-| 6 | **不要修改 `next.config.mjs` 中的 `output` 配置** | 改为非静态模式会导致 GitHub Pages 部署失败 |
-| 7 | **不要直接操作 LocalStorage 读写数据** | 必须通过 `lib/storage.ts` 中的函数，以保证 key 名一致和异常处理 |
-| 8 | **不要在组件中直接修改 events/todos 数组** | 必须通过 `setData()` + `syncLinkedItems()`，否则双向关联会断裂 |
-| 9 | **不要引入新的第三方依赖**（npm install） | 需评估是否与静态导出的束体积限制冲突，且当前依赖集已足够覆盖需求 |
-| 10 | **不要引入测试框架或写测试文件** | 项目目前无测试体系，单独加测试文件不会被 CI 运行，反而造成维护负担 |
+| 1 | 不引入 CSS 框架 / 组件库 | 已有完整手写体系 |
+| 2 | 不用 SSR / API Routes / Middleware | `output: 'export'` 不支持 |
+| 3 | 不加数据库或后端依赖 | Gist API 已覆蓋 |
+| 4 | 不改 `types.ts` 已有字段 | 破坏数据兼容，改字段必须加 migration |
+| 5 | 不改 `dev` 端口（10352） | 硬编码约定 |
+| 6 | 不改 `next.config.mjs` 的 `output` | 会导致部署失败 |
+| 7 | 不直接操作 LocalStorage | 必须通过 `lib/storage.ts` |
+| 8 | 不在组件中直接修改 events/todos 数组 | 必须经 `setData()` + `syncLinkedItems()` |
+| 9 | 不加新的 npm 依赖 | 保持零依赖云同步 |
+| 10 | 不引入测试框架 | 当前无测试体系 |
 
-## 常见改动模式
+## 关键文件速查
 
-### 1. 给 EventItem 或 TodoItem 加字段
+| 文件 | 职责 |
+|---|---|
+| `types.ts` | 数据契约，所有类型定义 |
+| `app/page.tsx` | 首页，状态中心，使用 `useAppData()` hook |
+| `app/calendar/page.tsx` | 日历页，共享 `useAppData()` hook |
+| `components/day-timeline.tsx` | 横向时间轴（缩放、虚拟化、拖拽） |
+| `lib/storage.ts` | 所有副作用：LocalStorage、Gist API、迁移 |
+| `lib/utils.ts` | 纯函数：`syncLinkedItems`、树构建、格式化 |
+| `hooks/use-app-data.ts` | 共享 hook：数据加载、持久化、云同步 |
 
-1. 在 `types.ts` 中加字段（可选字段用 `?`）
-2. 在 `lib/sample-data.ts` 中给示例数据补充该字段
-3. 在用到该类型的组件中处理新字段的展示
-4. **容易遗漏**：`lib/utils.ts` 的 `exportRows()` 函数需要在导出映射中加上新字段
-5. **容易遗漏**：`lib/storage.ts` 的 `importDataFromFile()` 不做字段校验，旧数据导入时新字段为 `undefined`，组件代码需要做好空值兜底
+## 详细文档
 
-### 2. 新增一个页面
-
-1. 在 `app/` 下创建目录 + `page.tsx`（必须以 `"use client"` 开头）
-2. 在 `app/page.tsx` 的导航区加 `<Link>` 入口
-3. **不要**创建 `layout.tsx`（除非该路由有独立的布局需求）
-4. **不要**使用 `generateStaticParams` 或 `generateMetadata` — 静态导出下动态路由不适用
-
-### 3. 新增一个组件
-
-1. 在 `components/` 下创建文件，以 `"use client"` 开头
-2. Props 类型定义在组件文件内
-3. 样式加在 `app/globals.css` 中
-4. **不要**为组件创建独立 CSS 文件 — 所有样式集中在 `globals.css`
-
-### 4. 修改数据后需要同步双向关联
-
-1. 修改 events 或 todos 后，必须调用 `syncLinkedItems(nextEvents, nextTodos)`
-2. 新创建的 TodoItem 如果关联了 Event，需要同时更新对应 Event 的 `linkedTodoIds`
-3. **参考实现**：`app/page.tsx` 中的 `handleSaveTask()` 和 `handleSaveWorkRecord()` 函数
-
-### 6. 新增一个模态弹窗
-
-1. 在 `components/` 下创建文件，以 `"use client"` 开头
-2. 使用 `.modal-overlay > .modal-panel` 的 HTML 结构（CSS 已有对应样式）
-3. 表单状态自管理，通过 `onSave(data) + onClose()` 两个回调与父组件通信
-4. 点击遮罩层（overlay）关闭弹窗：`e.target === e.currentTarget` 判断
-5. 标签选择使用 chip 模式：预设标签 `.chip-button.chip-tag` + 自定义输入
-6. 保存逻辑在 `page.tsx` 的回调中执行（`syncLinkedItems` + `setData`）
-
-### 5. 修改 LocalStorage 数据结构
-
-1. 先在 `types.ts` 中改类型
-2. 在 `lib/storage.ts` 中加版本检测或迁移逻辑
-3. **不要**直接改 LocalStorage key 名 — 会导致用户历史数据丢失
-4. **注意**：`importDataFromFile()` 验证只检查 `events` 和 `todos` 字段存在，不校验字段完整性
-
-## 部署
-
-- 触发条件：push 到 `master` 分支 或 手动触发 `workflow_dispatch`
-- 构建流程：`npm ci` → `npm run build`（产出 `out/`） → `upload-pages-artifact` → `deploy-pages`
-- 约束来源：`next.config.mjs` 的 `output: 'export'` 决定了构建产物是完全静态的
-- **这意味着**：没有服务端运行时、不能用动态路由参数、图片必须设为 `unoptimized: true`
-- 配置文件：`.github/workflows/deploy.yml`
-
-## 当前状态
-
-以下功能**已完成**，修改时需保持兼容：
-
-- 横向时间轴（视口固定 7 天、缩放 0.16x~5.2x、上下避让、日分隔线、光标中心缩放、紧凑卡片、hover 展开、"今天"按钮）
-- 快速记录工作（模态弹窗、默认"过去2小时到现在"、快捷时间调整、标签 chip、关联待办、时长预览）
-- 新建任务（模态弹窗、标签 chip、关联日程多选、优先级/状态/部门/联系人字段）
-- 多级待办树（status 状态提升、step 进度、部门/联系人/备注字段）
-- Event ↔ Todo 双向关联
-- 文字日记视图（当天工作记录动态过滤）
-- 全局搜索（关键词匹配 + 类型筛选）
-- 日历视图（按天查看日程/待办 + 添加日程表单）
-- LocalStorage 自动持久化（isInitialized 守卫 + 版本号）
-- JSON 文件导入/导出（导入时自动迁移旧版本数据）
-- CSV 导出（UTF-8 BOM，Excel/WPS 直接打开）
-- GitHub Gist 云同步（私有 Gist、自动推送、Token 配置、跨设备恢复）
-- 数据版本自动迁移（所有数据入口均自动升级旧格式）
-- 导出设置面板（JSON/CSV 格式选择、数据预览）
-- GitHub Pages 自动部署
-
-以下功能**明确不实现**，不要主动补全：
-
-- 用户登录/认证 — 暂不实现
-- Excel 富格式导出（合并单元格等）— 暂不实现（CSV 已可用）
-- iOS/Android App — 暂不实现
-- 编辑/删除/状态变更操作 — 暂不实现（添加已实现，修改和删除尚未开始）
+- `docs/ARCHITECTURE.md` — 完整架构：数据流、组件约定、CSS 规范、标签系统、时间轴系统、版本迁移
+- `docs/PATTERNS.md` — 常见改动模式：加字段、加页面、加组件、加弹窗、改存储结构
+- `docs/AI-DEVELOPMENT.md` — AI 辅助开发方法论和流程
+- `README.md` — 用户文档

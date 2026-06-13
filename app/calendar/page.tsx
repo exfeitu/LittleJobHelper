@@ -1,13 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { ExportPanel } from "@/components/export-panel";
 import { HelpIcon } from "@/components/help-icon";
 import { SettingsPanel } from "@/components/settings-panel";
-import { loadAndMigrateFromStorage, loadSettings, saveEventsToStorage, saveTodosToStorage } from "@/lib/storage";
-import { formatDateTime, formatDiaryDate, getTodayFocus, syncLinkedItems } from "@/lib/utils";
+import { syncLinkedItems } from "@/lib/utils";
+import { formatDateTime, formatDiaryDate, getTodayFocus } from "@/lib/utils";
 import { EventItem, Priority, TodoItem, TodoStatus } from "@/types";
+import { useAppData } from "@/hooks/use-app-data";
 
 function todayStr(): string {
   const d = new Date();
@@ -28,25 +29,16 @@ function makeCalendarFormDefault(date: string) {
 }
 
 export default function CalendarPage() {
-  const [{ events, todos }, setData] = useState(() => {
-    const stored = loadAndMigrateFromStorage();
-    if (stored.events.length > 0 || stored.todos.length > 0) {
-      return syncLinkedItems(stored.events, stored.todos);
-    }
-    return { events: [], todos: [] };
-  });
+  const {
+    events, todos, isInitialized, cloudEnabled,
+    setData, refreshCloudStatus,
+  } = useAppData();
+
   const today = todayStr();
   const [selectedDate, setSelectedDate] = useState(today);
   const [form, setForm] = useState(() => makeCalendarFormDefault(today));
   const [showSettingsPanel, setShowSettingsPanel] = useState(false);
   const [showExportPanel, setShowExportPanel] = useState(false);
-  const [cloudEnabled, setCloudEnabled] = useState(() => loadSettings() !== null);
-
-  // 数据变更时自动保存到 LocalStorage
-  useEffect(() => {
-    saveEventsToStorage(events);
-    saveTodosToStorage(todos);
-  }, [events, todos]);
 
   const eventsByDate = useMemo(() => events.filter((event) => event.startTime.startsWith(selectedDate)), [events, selectedDate]);
   const todosByDate = useMemo(() => todos.filter((todo) => todo.dueDate?.startsWith(selectedDate)), [todos, selectedDate]);
@@ -92,8 +84,6 @@ export default function CalendarPage() {
 
     const synced = syncLinkedItems([...events, newEvent], [...todos, newTodo]);
     setData(synced);
-    saveEventsToStorage(synced.events);
-    saveTodosToStorage(synced.todos);
     setSelectedDate(form.date);
     setForm(makeCalendarFormDefault(form.date));
   };
@@ -274,13 +264,11 @@ export default function CalendarPage() {
           onDataLoaded={(loadedEvents, loadedTodos) => {
             const synced = syncLinkedItems(loadedEvents, loadedTodos);
             setData(synced);
-            saveEventsToStorage(synced.events);
-            saveTodosToStorage(synced.todos);
             setShowSettingsPanel(false);
           }}
           onClose={() => {
             setShowSettingsPanel(false);
-            setCloudEnabled(loadSettings() !== null);
+            refreshCloudStatus();
           }}
         />
       )}
