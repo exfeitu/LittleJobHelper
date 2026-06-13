@@ -75,6 +75,7 @@ export function TaskFormPanel({ editTodo, customTags = [], onTagCreated, onSave,
       pinnedToToday: status !== "completed" && status !== "cancelled",
       linkedEventIds: editTodo?.linkedEventIds,
       steps: editTodo?.steps,
+      updatedAt: new Date().toISOString(),
     };
 
     onSave(todo);

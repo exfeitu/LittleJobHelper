@@ -679,7 +679,7 @@ button {
   bottom: 0;
   width: 0;
   transform: translateX(-50%);
-  border-left: 1px dashed rgba(91, 150, 106, 0.28);
+  border-left: 2px solid rgba(91, 150, 106, 0.35);
   pointer-events: none;
   z-index: 1;
 }
@@ -779,7 +779,8 @@ button {
 /* 事件卡片 */
 .line-event-card {
   position: absolute;
-  left: var(--card-offset-x, 0px);
+  left: 0;
+  transform: translateX(var(--card-offset-x, 0px));
   width: max(72px, var(--card-width, 180px));
   max-width: 320px;
   max-height: 130px;

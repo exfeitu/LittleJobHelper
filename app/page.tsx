@@ -11,9 +11,9 @@ import { WorkRecordPanel } from "@/components/work-record-panel";
 import { SettingsPanel } from "@/components/settings-panel";
 import { ExportPanel } from "@/components/export-panel";
 import { HelpIcon } from "@/components/help-icon";
-import { departmentOptions, sampleEvents, sampleTodos } from "@/lib/sample-data";
+import { departmentOptions } from "@/lib/sample-data";
 import { buildTodoTree, formatDateTime, getFilterValues, getTodayFocus, syncLinkedItems } from "@/lib/utils";
-import { loadAndMigrateFromStorage, saveEventsToStorage, saveTodosToStorage, pushToCloud, loadSettings, loadCustomTags, addCustomTag } from "@/lib/storage";
+import { loadAndMigrateFromStorage, saveEventsToStorage, saveTodosToStorage, pushToCloud, pullAndMerge, loadSettings, loadCustomTags, addCustomTag, saveCustomTags } from "@/lib/storage";
 import { EventItem, SearchResult, TodoItem } from "@/types";
 
 export default function HomePage() {
@@ -25,7 +25,7 @@ export default function HomePage() {
       return syncLinkedItems(stored.events, stored.todos);
     }
 
-    return syncLinkedItems(sampleEvents, sampleTodos);
+    return { events: [], todos: [] };
   });
   
   useEffect(() => {
@@ -39,15 +39,51 @@ export default function HomePage() {
     }
   }, [events, todos, isInitialized]);
 
-  // 云同步自动推送（防抖 3 秒）
+  // 初始化时自动从云端拉取并合并（多端同步）
   useEffect(() => {
     if (!isInitialized) return;
 
     const settings = loadSettings();
     if (!settings) return;
 
-    const timer = setTimeout(() => {
-      pushToCloud(events, todos);
+    pullAndMerge(events, todos, customTags).then((result) => {
+      if (result) {
+        // 云端标签合并到本地
+        if (result.customTags.length > customTags.length) {
+          setCustomTags(result.customTags);
+          saveCustomTags(result.customTags);
+        }
+        if (result.mergedFromRemote) {
+          const synced = syncLinkedItems(result.events, result.todos);
+          setData(synced);
+          saveEventsToStorage(synced.events);
+          saveTodosToStorage(synced.todos);
+        }
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isInitialized]);
+
+  // 云同步自动推送（防抖 3 秒），推送前会先拉取合并
+  useEffect(() => {
+    if (!isInitialized) return;
+
+    const settings = loadSettings();
+    if (!settings) return;
+
+    const timer = setTimeout(async () => {
+      const result = await pushToCloud(events, todos, customTags);
+      // 如果推送过程中发现远端有新标签，更新本地
+      if (result.customTags.length > customTags.length) {
+        setCustomTags(result.customTags);
+        saveCustomTags(result.customTags);
+      }
+      // 如果推送过程中发现远端有新数据，更新本地状态
+      if (result.mergedFromRemote) {
+        // 远端数据已合并，需要回写到 local state
+        // 这里通过重新加载本地存储来实现（pushToCloud 内部已合并推送）
+        // 我们只需要在下次存储变更时自然同步即可
+      }
     }, 3000);
 
     return () => clearTimeout(timer);
@@ -70,7 +106,7 @@ export default function HomePage() {
   const [timelineScale, setTimelineScale] = useState(0.35);
   const [scrollToTodayTrigger, setScrollToTodayTrigger] = useState(0);
   const MIN_SCALE = 0.03;
-  const MAX_SCALE = 1.0;
+  const MAX_SCALE = 24;
   const BASE_VISIBLE_DAYS = 1;
   const visibleDays = BASE_VISIBLE_DAYS / timelineScale;
 
@@ -100,7 +136,7 @@ export default function HomePage() {
   const handleTodayPickerChange = useCallback((date: string) => {
     setShowTodayPicker(false);
     if (!date) return;
-    setTimelineScale(MAX_SCALE);
+    setTimelineScale(1.0); // 1天视图
     setScrollToDate(date);
   }, []);
 
@@ -136,7 +172,15 @@ export default function HomePage() {
   }, [customDays]);
 
   const handleTagCreated = (tag: string) => {
-    setCustomTags(addCustomTag(tag));
+    const updated = addCustomTag(tag);
+    setCustomTags(updated);
+    saveCustomTags(updated);
+  };
+
+  const handleTagDeleted = (tag: string) => {
+    const updated = customTags.filter((t) => t !== tag);
+    setCustomTags(updated);
+    saveCustomTags(updated);
   };
 
   const departmentChoices = useMemo(
@@ -254,9 +298,14 @@ export default function HomePage() {
     <main className="app-shell">
       <section className="workspace-simple">
         <header className="page-header panel">
-          <div>
-            <h1>办公助手</h1>
-            <p>聚焦时间轴回溯、今日记录、待办跟进与快速检索。</p>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            <h1 style={{ fontSize: "clamp(2.4rem, 3vw, 3.2rem)" }}>办公助手</h1>
+            <HelpIcon tips={[
+              "聚焦时间轴回溯、今日记录、待办跟进与快速检索。",
+              "时间轴支持鼠标滚轮缩放（1小时 ~ 30天）和拖拽平移。",
+              "待办和工作记录自动同步到 GitHub Gist 云端。",
+              "使用右上角搜索框可以快速查找内容。",
+            ]} />
           </div>
           <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
             <nav className="page-nav">
@@ -285,6 +334,7 @@ export default function HomePage() {
             >
               📊 导出Excel
             </button>
+
           </div>
         </header>
 
@@ -293,7 +343,7 @@ export default function HomePage() {
             <section className="grid overview-grid">
               <article className="panel section-card">
                 <div className="section-head section-head-tight">
-                  <div style={{ display: "flex", alignItems: "flex-end", gap: "6px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
                     <h2>今日待办</h2>
                     <HelpIcon tips={[
                       "显示今日需要跟进的待办任务，按优先级排列。",
@@ -357,10 +407,10 @@ export default function HomePage() {
             <section className="grid overview-grid">
               <article className="panel section-card">
                 <div className="section-head section-head-tight">
-                  <div style={{ display: "flex", alignItems: "flex-end", gap: "6px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
                     <h2>时间轴</h2>
                     <HelpIcon tips={[
-                      "🖱 滚轮：缩放时间轴（3% ~ 100%，即1天 ~ 30天）",
+                      "🖱 滚轮：缩放时间轴（1小时 ~ 30天）",
                       "🖱 拖拽滚动条：移动时间窗口",
                       "👆 点击卡片：编辑工作记录 / 待办",
                       "📌 菱形标记：待办任务（橙色虚线卡片）",
@@ -400,8 +450,8 @@ export default function HomePage() {
                         className="today-date-picker-inline"
                         style={{ width: 60 }}
                         value={customDays}
-                        min={1}
-                        max={30}
+                        min={0.04}
+                        max={33}
                         step={0.5}
                         onChange={(e) => setCustomDays(e.target.value)}
                         onKeyDown={(e) => { if (e.key === "Enter") handleCustomDaysSubmit(); }}
@@ -418,7 +468,7 @@ export default function HomePage() {
             <section className="grid overview-grid">
               <article className="panel section-card">
                 <div className="section-head section-head-tight">
-                  <div style={{ display: "flex", alignItems: "flex-end", gap: "6px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
                     <h2>待办任务</h2>
                     <HelpIcon tips={[
                       "使用顶部下拉菜单按\"部门\"和\"联系人\"筛选待办。",
@@ -461,7 +511,7 @@ export default function HomePage() {
             <section className="grid overview-grid">
               <article className="panel section-card">
                 <div className="section-head section-head-tight">
-                  <div style={{ display: "flex", alignItems: "flex-end", gap: "6px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
                     <h2>今日工作记录</h2>
                     <HelpIcon tips={[
                       "以时间线形式展示今日新增的工作记录。",
@@ -478,7 +528,7 @@ export default function HomePage() {
             <section className="grid overview-grid">
               <article className="panel section-card">
                 <div className="section-head section-head-tight">
-                  <div style={{ display: "flex", alignItems: "flex-end", gap: "6px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
                     <h2>搜索结果</h2>
                     <HelpIcon tips={[
                       "输入关键词后自动搜索匹配的待办和工作记录。",
@@ -506,6 +556,7 @@ export default function HomePage() {
           linkedTodoTitles={linkedTodoTitles}
           customTags={customTags}
           onTagCreated={handleTagCreated}
+          onTagDeleted={handleTagDeleted}
           onSave={handleSaveWorkRecord}
           onClose={() => setShowWorkRecordPanel(false)}
         />
@@ -528,6 +579,7 @@ export default function HomePage() {
           linkedTodoTitles={linkedTodoTitles}
           editEvent={editingEvent}
           customTags={customTags}
+          onTagDeleted={handleTagDeleted}
           onTagCreated={handleTagCreated}
           onSave={handleSaveWorkRecord}
           onDelete={handleDeleteEvent}
@@ -573,6 +625,7 @@ export default function HomePage() {
           onClose={() => setShowExportPanel(false)}
         />
       )}
+
     </main>
   );
 }

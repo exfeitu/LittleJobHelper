@@ -44,7 +44,7 @@ type PositionedItem = TimelineItem & {
 };
 
 const MIN_SCALE = 0.03;
-const MAX_SCALE = 1.0;
+const MAX_SCALE = 24;
 const SCALE_STEP = 0.05;
 const BASE_VISIBLE_DAYS = 1;
 const EVENT_COLORS = ["#5fa86e", "#8c6fd1", "#4f9d9d", "#c96f91", "#7ea95b", "#5b8fc9"];
@@ -181,6 +181,38 @@ export function DayTimeline({ events, todos = [], linkedTodoTitles = {}, onEvent
   const scrollRef = useRef<HTMLDivElement>(null);
   const initializedRef = useRef(false);
 
+  // 视口虚拟化：只渲染可视区域附近的元素
+  const [viewportLeft, setViewportLeft] = useState(0);
+  const visibleRange = useMemo(() => ({
+    left: viewportLeft - containerWidth * 0.5,
+    right: viewportLeft + containerWidth * 1.5,
+  }), [viewportLeft, containerWidth]);
+
+  // 同步 scrollLeft 到状态（RAF 节流），用于虚拟化
+  useEffect(() => {
+    const container = scrollRef.current;
+    if (!container) return;
+    let raf = 0;
+    const onScroll = () => {
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        raf = 0;
+        setViewportLeft(container.scrollLeft);
+      });
+    };
+    container.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      container.removeEventListener("scroll", onScroll);
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, []);
+
+  // useLayoutEffect 调整 scrollLeft 后同步 viewportLeft
+  useLayoutEffect(() => {
+    const container = scrollRef.current;
+    if (container) setViewportLeft(container.scrollLeft);
+  }, [scale]);
+
   // 拖动平移
   const isDragging = useRef(false);
   const dragStartX = useRef(0);
@@ -312,12 +344,15 @@ export function DayTimeline({ events, todos = [], linkedTodoTitles = {}, onEvent
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scrollToDate]);
 
-  const positionedItems = useMemo<PositionedItem[]>(() => {
+  // 不依赖 scale/shellWidth 的稳定计算（date解析、lane分配、颜色）
+  const stableItems = useMemo(() => {
     if (!timelineDays.length) return [];
     const laneEndMinutes: number[] = [];
-    const laneRights = { top: [] as number[], bottom: [] as number[] };
 
-    return allItems.map((item, index) => {
+    let eventColorIdx = 0;
+    let todoColorIdx = 0;
+
+    return allItems.map((item) => {
       const startMs = new Date(item.startTime).getTime();
       const endMs = new Date(item.endTime).getTime();
       const startMinute = (startMs - timeOrigin) / 60000;
@@ -332,55 +367,61 @@ export function DayTimeline({ events, todos = [], linkedTodoTitles = {}, onEvent
       }
 
       // 待办强制放在 bottom 侧，事件放在 top 侧
-      const forceSide = item.kind === "todo" ? "bottom" : "top";
-      // 重新分配 lane 以满足 side 约束
       const adjustedLane = item.kind === "todo"
-        ? lane % 2 === 0 ? lane + 1 : lane  // bottom = odd lanes
-        : lane % 2 === 0 ? lane : lane + 1;  // top = even lanes
+        ? lane % 2 === 0 ? lane + 1 : lane
+        : lane % 2 === 0 ? lane : lane + 1;
       const stack = Math.floor(adjustedLane / 2);
       const side: "top" | "bottom" = adjustedLane % 2 === 0 ? "top" : "bottom";
 
       const leftPercent = totalRangeMs > 0 ? ((startMs - timeOrigin) / totalRangeMs) * 100 : 0;
       const widthPercent = totalRangeMs > 0 ? (Math.max(60000, endMs - startMs) / totalRangeMs) * 100 : 0;
 
-      const naturalLeftPx = (leftPercent / 100) * shellWidth;
-      const naturalWidthPx = Math.max(40, (widthPercent / 100) * shellWidth);
-      const regularCardWidth = Math.min(FULL_CARD_MAX_WIDTH, Math.max(FULL_CARD_MIN_WIDTH, naturalWidthPx));
-
-      const sameSideRight = laneRights[side][stack] ?? -Infinity;
-      const shiftedLeftPx = Math.max(naturalLeftPx, sameSideRight + CARD_HORIZONTAL_GAP);
-      const cardShiftPx = shiftedLeftPx - naturalLeftPx;
-
-      const compactByScale = scale <= 0.55;
-      const compactByShift = cardShiftPx >= COMPACT_SHIFT_THRESHOLD;
-      const compact = compactByScale || compactByShift;
-      const cardWidthPx = compact ? COMPACT_CARD_WIDTH : regularCardWidth;
-
-      laneRights[side][stack] = shiftedLeftPx + cardWidthPx;
-
       const colors = item.kind === "todo" ? TODO_COLORS : EVENT_COLORS;
-      const colorIndex = item.kind === "todo"
-        ? allItems.filter((x, i) => x.kind === "todo" && i <= index).length - 1
-        : allItems.filter((x, i) => x.kind === "event" && i <= index).length - 1;
+      const colorIndex = item.kind === "todo" ? todoColorIdx++ : eventColorIdx++;
 
       return {
         ...item,
         lane: adjustedLane, stack, side,
         color: colors[Math.max(0, colorIndex) % colors.length],
         leftPercent, widthPercent,
+      };
+    });
+  }, [allItems, timelineDays, timeOrigin, totalRangeMs]);
+
+  // 仅依赖 shellWidth 的像素计算（缩放时重算，稳定部分不变）
+  const positionedItems = useMemo<PositionedItem[]>(() => {
+    if (!stableItems.length) return [];
+    const laneRights = { top: [] as number[], bottom: [] as number[] };
+
+    return stableItems.map((item) => {
+      const naturalLeftPx = (item.leftPercent / 100) * shellWidth;
+      const naturalWidthPx = Math.max(40, (item.widthPercent / 100) * shellWidth);
+      const regularCardWidth = Math.min(FULL_CARD_MAX_WIDTH, Math.max(FULL_CARD_MIN_WIDTH, naturalWidthPx));
+
+      const sameSideRight = laneRights[item.side][item.stack] ?? -Infinity;
+      const shiftedLeftPx = Math.max(naturalLeftPx, sameSideRight + CARD_HORIZONTAL_GAP);
+      const cardShiftPx = shiftedLeftPx - naturalLeftPx;
+
+      const compact = cardShiftPx >= COMPACT_SHIFT_THRESHOLD;
+      const cardWidthPx = compact ? COMPACT_CARD_WIDTH : regularCardWidth;
+
+      laneRights[item.side][item.stack] = shiftedLeftPx + cardWidthPx;
+
+      return {
+        ...item,
         cardOffsetXPx: cardShiftPx,
         cardWidthPx,
         compact,
       };
     });
-  }, [allItems, timelineDays, timeOrigin, totalRangeMs, shellWidth, scale]);
+  }, [stableItems, shellWidth]);
 
   const trackHeight = useMemo(() => {
-    const maxTop = positionedItems.reduce((m, e) => (e.side === "top" ? Math.max(m, e.stack) : m), -1);
-    const maxBottom = positionedItems.reduce((m, e) => (e.side === "bottom" ? Math.max(m, e.stack) : m), -1);
+    const maxTop = stableItems.reduce((m, e) => (e.side === "top" ? Math.max(m, e.stack) : m), -1);
+    const maxBottom = stableItems.reduce((m, e) => (e.side === "bottom" ? Math.max(m, e.stack) : m), -1);
     const needed = (Math.max(maxTop, maxBottom) + 1) * LANE_HEIGHT * 2 + TRACK_PADDING * 2;
     return Math.max(380, needed);
-  }, [positionedItems]);
+  }, [stableItems]);
 
   // 按周聚合计数：显示时间范围内每周有多少工作记录和待办
   const weekBrackets = useMemo(() => {
@@ -415,46 +456,46 @@ export function DayTimeline({ events, todos = [], linkedTodoTitles = {}, onEvent
   const hourMarks = useMemo(() => {
     const totalHours = Math.floor(totalRangeMs / 3600000) + 1;
     if (totalHours <= 0) return [];
-    const marks: { key: string; leftPercent: number; label: string; isBoundary: boolean; yearLabel?: string; previousDayLabel?: string; currentDayLabel?: string }[] = [];
+    const marks: { key: string; leftPercent: number; label: string }[] = [];
 
-    // 只生成会显示的标记：每 axisDensity 小时 + 日期边界
-    for (let hour = 0; hour < totalHours; hour += axisDensity) {
-      const isBoundary = hour > 0 && hour % 24 === 0;
-      const dayIndex = Math.floor(hour / 24);
-      const currentDay = timelineDays[dayIndex];
+    // 从第1小时开始，优先显示奇数时间点，自然避开 00:00（日边界）
+    for (let hour = 1; hour < totalHours; hour += axisDensity) {
       marks.push({
         key: `h-${hour}`,
         leftPercent: totalRangeMs > 0 ? (hour * 3600000) / totalRangeMs * 100 : 0,
         label: `${String(hour % 24).padStart(2, "0")}:00`,
-        isBoundary,
-        ...(isBoundary && dayIndex > 0 ? {
-          yearLabel: `${new Date(timelineDays[dayIndex - 1]).getFullYear()}年`,
-          previousDayLabel: formatDayLabel(timelineDays[dayIndex - 1]),
-          currentDayLabel: formatDayLabel(currentDay),
-        } : {}),
       });
     }
 
-    // 补充 axisDensity 步长可能跳过的日期边界
-    for (let hour = 24; hour < totalHours; hour += 24) {
-      if (hour % axisDensity !== 0) {
-        const dayIndex = Math.floor(hour / 24);
-        const currentDay = timelineDays[dayIndex];
-        marks.push({
-          key: `h-${hour}`,
-          leftPercent: totalRangeMs > 0 ? (hour * 3600000) / totalRangeMs * 100 : 0,
-          label: "00:00",
-          isBoundary: true,
-          yearLabel: `${new Date(timelineDays[dayIndex - 1]).getFullYear()}年`,
-          previousDayLabel: formatDayLabel(timelineDays[dayIndex - 1]),
-          currentDayLabel: formatDayLabel(currentDay),
-        });
-      }
-    }
-
-    marks.sort((a, b) => parseInt(a.key.slice(2)) - parseInt(b.key.slice(2)));
     return marks;
-  }, [totalRangeMs, axisDensity, timelineDays]);
+  }, [totalRangeMs, axisDensity]);
+
+  // 视口虚拟化：只保留可见范围内的元素
+  const pxFromPct = (pct: number) => (pct / 100) * shellWidth;
+  const isVisible = (px: number) => px >= visibleRange.left && px <= visibleRange.right;
+
+  const visibleHourMarks = useMemo(
+    () => hourMarks.filter((m) => isVisible(pxFromPct(m.leftPercent))),
+    [hourMarks, shellWidth, visibleRange],
+  );
+
+  const visibleDaySeps = useMemo(() => {
+    // timelineDays 是 ISO 字符串数组，左边界对应 day 的 00:00
+    return timelineDays.filter((day) => {
+      const dayPx = pxFromPct(totalRangeMs > 0 ? ((startOfDay(day).getTime() - timeOrigin) / totalRangeMs) * 100 : 0);
+      return isVisible(dayPx);
+    });
+  }, [timelineDays, totalRangeMs, timeOrigin, shellWidth, visibleRange]);
+
+  const visibleWeekBrackets = useMemo(
+    () => weekBrackets.filter((w) => isVisible(pxFromPct(totalRangeMs > 0 ? ((w.start.getTime() - timeOrigin) / totalRangeMs) * 100 : 0))),
+    [weekBrackets, totalRangeMs, timeOrigin, shellWidth, visibleRange],
+  );
+
+  const visibleDayLabels = useMemo(
+    () => timelineDays.filter((day) => isVisible(pxFromPct(totalRangeMs > 0 ? ((startOfDay(day).getTime() - timeOrigin) / totalRangeMs) * 100 : 0))),
+    [timelineDays, totalRangeMs, timeOrigin, shellWidth, visibleRange],
+  );
 
   const scrollToToday = useCallback(() => {
     const container = scrollRef.current;
@@ -542,7 +583,13 @@ export function DayTimeline({ events, todos = [], linkedTodoTitles = {}, onEvent
         const clamped = Number(Math.min(MAX_SCALE, Math.max(MIN_SCALE, nextScale)).toFixed(4));
         if (clamped === scaleRef.current) return;
         wheelZoomingRef.current = true;
-        // scrollLeft 由 useLayoutEffect 在 DOM 更新后同步设置，消除闪烁
+
+        // 预测缩放后的视口位置，提前更新避免虚拟化闪烁
+        const nextVisDays = BASE_VISIBLE_DAYS / clamped;
+        const nextShellW = Math.max((totalDays / nextVisDays) * containerWidth, containerWidth);
+        const { ratio, viewportX } = lastCursorRef.current;
+        setViewportLeft(Math.max(0, ratio * nextShellW - viewportX));
+
         setScale(clamped);
       });
     },
@@ -572,33 +619,22 @@ export function DayTimeline({ events, todos = [], linkedTodoTitles = {}, onEvent
 
             {/* 时间刻度 */}
             <div className="line-timeline-axis-zone">
-              {hourMarks.map((mark) => (
-                <div key={mark.key} className={`axis-time-mark ${mark.isBoundary ? "boundary" : ""}`} style={{ left: `${mark.leftPercent}%` }}>
-                  {mark.isBoundary && mark.previousDayLabel && mark.currentDayLabel ? (
-                    <div className="axis-boundary-stack">
-                      <span className="axis-boundary-year">{mark.yearLabel}</span>
-                      <span className="axis-boundary-date">{mark.previousDayLabel}</span>
-                      <strong>24:00</strong>
-                      <span className="axis-boundary-line" />
-                      <strong>00:00</strong>
-                      <span className="axis-boundary-date">{mark.currentDayLabel}</span>
-                    </div>
-                  ) : (
-                    <strong className="axis-hour-label">{mark.label}</strong>
-                  )}
+              {visibleHourMarks.map((mark) => (
+                <div key={mark.key} className="axis-time-mark" style={{ left: `${mark.leftPercent}%` }}>
+                  <strong className="axis-hour-label">{mark.label}</strong>
                 </div>
               ))}
             </div>
 
             {/* 日分隔竖线 */}
-            {timelineDays.slice(1).map((day) => {
+            {visibleDaySeps.map((day) => {
               const dayStart = startOfDay(day).getTime();
               const dayLeftPercent = totalRangeMs > 0 ? ((dayStart - timeOrigin) / totalRangeMs) * 100 : 0;
               return <div key={`sep-${day}`} className="line-day-separator" style={{ left: `${dayLeftPercent}%` }} />;
             })}
 
             {/* 周计数括号 */}
-            {weekBrackets.map((week) => {
+            {visibleWeekBrackets.map((week) => {
               const ws = week.start.getTime();
               const we = week.end.getTime() + 86400000;
               const leftPct = totalRangeMs > 0 ? ((ws - timeOrigin) / totalRangeMs) * 100 : 0;
@@ -619,7 +655,7 @@ export function DayTimeline({ events, todos = [], linkedTodoTitles = {}, onEvent
             })}
 
             {/* 每日标签 */}
-            {timelineDays.map((day) => {
+            {visibleDayLabels.map((day) => {
               const dayStart = startOfDay(day).getTime();
               const dayLeftPercent = totalRangeMs > 0 ? ((dayStart - timeOrigin) / totalRangeMs) * 100 : 0;
               return <div key={day} className="line-day-chip" style={{ left: `${dayLeftPercent}%` }}>{formatDayLabel(day)}</div>;

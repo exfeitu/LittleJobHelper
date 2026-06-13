@@ -9,6 +9,7 @@ export type EventItem = {
   detail?: string;
   tags: string[];
   linkedTodoIds?: string[];
+  updatedAt: string;
 };
 
 export type TodoStep = {
@@ -33,6 +34,7 @@ export type TodoItem = {
   pinnedToToday?: boolean;
   linkedEventIds?: string[];
   steps?: TodoStep[];
+  updatedAt: string;
 };
 
 export type TodoTreeNode = TodoItem & {

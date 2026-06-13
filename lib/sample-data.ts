@@ -9,6 +9,7 @@ export const sampleEvents: EventItem[] = [
     detail: "整理第一季度重点任务完成情况，补充领导批示摘要。",
     tags: ["党建", "材料"],
     linkedTodoIds: ["todo-1", "todo-3"],
+      updatedAt: "2026-04-01T00:00:00Z",
   },
   {
     id: "event-2",
@@ -18,6 +19,7 @@ export const sampleEvents: EventItem[] = [
     detail: "与组织部电话确认签批链条，补充送审顺序备注。",
     tags: ["组织", "签批"],
     linkedTodoIds: ["todo-1"],
+      updatedAt: "2026-04-01T00:00:00Z",
   },
   {
     id: "event-3",
@@ -27,6 +29,7 @@ export const sampleEvents: EventItem[] = [
     detail: "外出递交干部任免审批材料，现场核对份数。",
     tags: ["外出", "组织"],
     linkedTodoIds: ["todo-1", "todo-2"],
+      updatedAt: "2026-04-01T00:00:00Z",
   },
   {
     id: "event-4",
@@ -35,6 +38,7 @@ export const sampleEvents: EventItem[] = [
     title: "核对编办人员编制台账",
     detail: "逐项核对空编、超编和借调信息。",
     tags: ["编制", "台账"],
+      updatedAt: "2026-04-01T00:00:00Z",
   },
   {
     id: "event-5",
@@ -43,6 +47,7 @@ export const sampleEvents: EventItem[] = [
     title: "补录退休人员档案缺项",
     detail: "同步整理退休审批表缺页说明，准备后续复核。",
     tags: ["档案", "补录"],
+      updatedAt: "2026-04-01T00:00:00Z",
   },
   {
     id: "event-6",
@@ -52,6 +57,7 @@ export const sampleEvents: EventItem[] = [
     detail: "确认推送窗口为本周五，需附一句简短导语。",
     tags: ["宣传", "沟通"],
     linkedTodoIds: ["todo-5"],
+      updatedAt: "2026-04-01T00:00:00Z",
   },
   {
     id: "event-7",
@@ -61,6 +67,7 @@ export const sampleEvents: EventItem[] = [
     detail: "核对姓名、职级和审批口径，准备回传电子版。",
     tags: ["人社", "审批"],
     linkedTodoIds: ["todo-7"],
+      updatedAt: "2026-04-01T00:00:00Z",
   },
   {
     id: "event-8",
@@ -69,6 +76,7 @@ export const sampleEvents: EventItem[] = [
     title: "整理干部档案缺失项",
     detail: "补记学历材料和任免表目录，准备下午联系补件。",
     tags: ["档案", "整理"],
+      updatedAt: "2026-04-01T00:00:00Z",
   },
   {
     id: "event-9",
@@ -77,6 +85,7 @@ export const sampleEvents: EventItem[] = [
     title: "补充借调人员台账口径",
     detail: "修正借调期限与在岗状态字段，避免和编办数据冲突。",
     tags: ["台账", "校验"],
+      updatedAt: "2026-04-01T00:00:00Z",
   },
   {
     id: "event-10",
@@ -86,6 +95,7 @@ export const sampleEvents: EventItem[] = [
     detail: "根据会议纪要修订说明栏并提交编办。",
     tags: ["编制", "报送"],
     linkedTodoIds: ["todo-4"],
+      updatedAt: "2026-04-01T00:00:00Z",
   },
   {
     id: "event-11",
@@ -94,6 +104,7 @@ export const sampleEvents: EventItem[] = [
     title: "电话确认人员信息统计口径",
     detail: "与纪检组核对干部信息表中的现任岗位填写方式。",
     tags: ["纪检", "沟通"],
+      updatedAt: "2026-04-01T00:00:00Z",
   },
 ];
 
@@ -119,6 +130,7 @@ export const sampleTodos: TodoItem[] = [
       { id: "step-1-4", content: "找领导签字盖章", completed: false },
       { id: "step-1-5", content: "提交组织部审核", completed: false },
     ],
+      updatedAt: "2026-04-01T00:00:00Z",
   },
   {
     id: "todo-2",
@@ -135,6 +147,7 @@ export const sampleTodos: TodoItem[] = [
       { id: "step-2-3", content: "查找2025年考核表", completed: true },
       { id: "step-2-4", content: "扫描并归档", completed: true },
     ],
+      updatedAt: "2026-04-01T00:00:00Z",
   },
   {
     id: "todo-3",
@@ -153,6 +166,7 @@ export const sampleTodos: TodoItem[] = [
       { id: "step-3-2", content: "开具任职年限证明", completed: false },
       { id: "step-3-3", content: "发送电子版到工作群", completed: false },
     ],
+      updatedAt: "2026-04-01T00:00:00Z",
   },
   {
     id: "todo-6",
@@ -161,6 +175,7 @@ export const sampleTodos: TodoItem[] = [
     status: "pending",
     tags: ["校验"],
     parentId: "todo-3",
+      updatedAt: "2026-04-01T00:00:00Z",
   },
   {
     id: "todo-4",
@@ -181,6 +196,7 @@ export const sampleTodos: TodoItem[] = [
       { id: "step-4-3", content: "制定调整方案", completed: false },
       { id: "step-4-4", content: "提交编办审批", completed: false },
     ],
+      updatedAt: "2026-04-01T00:00:00Z",
   },
   {
     id: "todo-5",
@@ -200,6 +216,7 @@ export const sampleTodos: TodoItem[] = [
       { id: "step-5-2", content: "确认发布时间和要求", completed: true },
       { id: "step-5-3", content: "准备先进事迹稿件", completed: true },
     ],
+      updatedAt: "2026-04-01T00:00:00Z",
   },
   {
     id: "todo-7",
@@ -221,6 +238,7 @@ export const sampleTodos: TodoItem[] = [
       { id: "step-7-3", content: "发送电子版给李科长", completed: false },
       { id: "step-7-4", content: "打印并报送纸质版", completed: false },
     ],
+      updatedAt: "2026-04-01T00:00:00Z",
   }
 ];
 

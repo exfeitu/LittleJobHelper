@@ -6,7 +6,6 @@ import { ExportPanel } from "@/components/export-panel";
 import { HelpIcon } from "@/components/help-icon";
 import { SettingsPanel } from "@/components/settings-panel";
 import { loadAndMigrateFromStorage, loadSettings, saveEventsToStorage, saveTodosToStorage } from "@/lib/storage";
-import { sampleEvents, sampleTodos } from "@/lib/sample-data";
 import { formatDateTime, formatDiaryDate, getTodayFocus, syncLinkedItems } from "@/lib/utils";
 import { EventItem, Priority, TodoItem, TodoStatus } from "@/types";
 
@@ -34,7 +33,7 @@ export default function CalendarPage() {
     if (stored.events.length > 0 || stored.todos.length > 0) {
       return syncLinkedItems(stored.events, stored.todos);
     }
-    return syncLinkedItems(sampleEvents, sampleTodos);
+    return { events: [], todos: [] };
   });
   const today = todayStr();
   const [selectedDate, setSelectedDate] = useState(today);
@@ -65,6 +64,7 @@ export default function CalendarPage() {
       .map((tag) => tag.trim())
       .filter(Boolean);
 
+    const now = new Date().toISOString();
     const newEvent: EventItem = {
       id: eventId,
       startTime,
@@ -73,6 +73,7 @@ export default function CalendarPage() {
       detail: form.detail || undefined,
       tags,
       linkedTodoIds: [todoId],
+      updatedAt: now,
     };
 
     const newTodo: TodoItem = {
@@ -86,6 +87,7 @@ export default function CalendarPage() {
       parentId: null,
       pinnedToToday: form.date === selectedDate,
       linkedEventIds: [eventId],
+      updatedAt: now,
     };
 
     const synced = syncLinkedItems([...events, newEvent], [...todos, newTodo]);
@@ -100,9 +102,14 @@ export default function CalendarPage() {
     <main className="app-shell">
       <section className="workspace-simple">
         <header className="page-header panel">
-          <div>
-            <h1>办公助手</h1>
-            <p>聚焦时间轴回溯、今日记录、待办跟进与快速检索。</p>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            <h1 style={{ fontSize: "clamp(2.4rem, 3vw, 3.2rem)" }}>办公助手</h1>
+            <HelpIcon tips={[
+              "聚焦时间轴回溯、今日记录、待办跟进与快速检索。",
+              "日历模式按日期汇总当日日程和待办。",
+              "支持添加日程并自动关联待办任务。",
+              "数据自动同步到 GitHub Gist 云端。",
+            ]} />
           </div>
           <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
             <nav className="page-nav">
@@ -131,29 +138,27 @@ export default function CalendarPage() {
             >
               📊 导出Excel
             </button>
-
-            <input
-              className="calendar-date-picker"
-              type="date"
-              value={selectedDate}
-              onChange={(event) => setSelectedDate(event.target.value)}
-            />
           </div>
         </header>
 
         <div className="calendar-layout">
           <section className="panel section-card calendar-main">
             <div className="section-head section-head-tight">
-              <div style={{ display: "flex", alignItems: "flex-end", gap: "6px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
                 <h2>{formatDiaryDate(`${selectedDate}T09:00:00`)}</h2>
                 <HelpIcon tips={[
                   "左侧\"当日日程\"显示选中日期的时间安排。",
                   "右侧\"当日待办\"显示截止日期为当天的任务。",
-                  "通过顶部日期选择器切换查看日期。",
+                  "使用右侧日期选择器切换查看日期。",
                   "点击\"添加日程\"可创建新的日程和关联待办。",
                 ]} />
               </div>
-              <p className="timeline-note">当天日程和待办会在这里汇总显示。</p>
+              <input
+                className="calendar-date-picker"
+                type="date"
+                value={selectedDate}
+                onChange={(event) => setSelectedDate(event.target.value)}
+              />
             </div>
 
             <div className="calendar-columns">
@@ -198,7 +203,7 @@ export default function CalendarPage() {
           <aside className="calendar-side">
             <section className="panel section-card">
               <div className="section-head section-head-tight">
-                <div style={{ display: "flex", alignItems: "flex-end", gap: "6px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
                   <h2>添加日程</h2>
                   <HelpIcon tips={[
                     "填写日程标题、日期和时间段信息。",
@@ -238,7 +243,7 @@ export default function CalendarPage() {
 
             <section className="panel section-card">
               <div className="section-head section-head-tight">
-                <div style={{ display: "flex", alignItems: "flex-end", gap: "6px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
                   <h2>重点待办</h2>
                   <HelpIcon tips={[
                     "展示所有标记为\"重点关注\"的待办任务。",
@@ -287,6 +292,7 @@ export default function CalendarPage() {
           onClose={() => setShowExportPanel(false)}
         />
       )}
+
     </main>
   );
 }

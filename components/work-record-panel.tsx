@@ -10,6 +10,7 @@ type WorkRecordPanelProps = {
   editEvent?: EventItem;
   customTags?: string[];
   onTagCreated?: (tag: string) => void;
+  onTagDeleted?: (tag: string) => void;
   onSave: (event: EventItem, linkedTodoId: string | null) => void;
   onDelete?: (id: string) => void;
   onClose: () => void;
@@ -51,7 +52,7 @@ function getDefaultEndTime(): string {
   return toDatetimeLocal(new Date());
 }
 
-export function WorkRecordPanel({ events, todos, linkedTodoTitles, editEvent, customTags = [], onTagCreated, onSave, onDelete, onClose }: WorkRecordPanelProps) {
+export function WorkRecordPanel({ events, todos, linkedTodoTitles, editEvent, customTags = [], onTagCreated, onTagDeleted, onSave, onDelete, onClose }: WorkRecordPanelProps) {
   const isEdit = !!editEvent;
   const allTags = useMemo(
     () => Array.from(new Set([...BASE_TAGS, ...customTags])),
@@ -166,6 +167,7 @@ export function WorkRecordPanel({ events, todos, linkedTodoTitles, editEvent, cu
       detail: detail.trim() || undefined,
       tags: allTags.length > 0 ? allTags : ["其他"],
       linkedTodoIds: linkedTodoId ? [linkedTodoId] : undefined,
+      updatedAt: new Date().toISOString(),
     };
 
     onSave(event, linkedTodoId || null);
@@ -260,16 +262,31 @@ export function WorkRecordPanel({ events, todos, linkedTodoTitles, editEvent, cu
         <div className="record-section">
           <label className="record-label">工作类型标签</label>
           <div className="record-tags-row">
-            {allTags.map((tag) => (
-              <button
-                key={tag}
-                type="button"
-                className={`chip-button chip-tag ${selectedTags.includes(tag) ? "chip-tag-active" : ""}`}
-                onClick={() => toggleTag(tag)}
-              >
-                {tag}
-              </button>
-            ))}
+            {allTags.map((tag) => {
+              const isCustom = !BASE_TAGS.includes(tag);
+              return (
+                <span key={tag} style={{ display: "inline-flex", alignItems: "center", gap: "2px" }}>
+                  <button
+                    type="button"
+                    className={`chip-button chip-tag ${selectedTags.includes(tag) ? "chip-tag-active" : ""}`}
+                    onClick={() => toggleTag(tag)}
+                  >
+                    {tag}
+                  </button>
+                  {isCustom && onTagDeleted && (
+                    <button
+                      type="button"
+                      className="chip-remove"
+                      onClick={(e) => { e.stopPropagation(); onTagDeleted(tag); }}
+                      title={`删除标签"${tag}"`}
+                      style={{ marginLeft: "-4px", padding: "2px 4px", fontSize: "0.65rem", border: "none", background: "none", cursor: "pointer", color: "var(--muted)", opacity: 0.6 }}
+                    >
+                      ✕
+                    </button>
+                  )}
+                </span>
+              );
+            })}
           </div>
           <div className="record-custom-tag">
             <input
