@@ -34,7 +34,7 @@ export default function HomePage() {
   const [editingTodo, setEditingTodo] = useState<TodoItem | undefined>(undefined);
 
   // 时间轴缩放控制（状态提升到 header 工具栏）
-  const [timelineScale, setTimelineScale] = useState(0.35);
+  const [timelineScale, setTimelineScale] = useState(1 / 7);
   const [scrollToTodayTrigger, setScrollToTodayTrigger] = useState(0);
   const MIN_SCALE = 0.03;
   const MAX_SCALE = 24;
@@ -239,6 +239,24 @@ export default function HomePage() {
               </Link>
             </nav>
 
+            {/* 快速记录工作 */}
+            <button
+              className="ghost-button"
+              type="button"
+              onClick={() => setShowWorkRecordPanel(true)}
+            >
+              📝 快速记录工作
+            </button>
+
+            {/* 添加任务 */}
+            <button
+              className="ghost-button"
+              type="button"
+              onClick={() => setShowTaskFormPanel(true)}
+            >
+              + 添加任务
+            </button>
+
             {/* 同步按钮 → 弹出设置面板 */}
             <button
               className="ghost-button"
@@ -262,70 +280,7 @@ export default function HomePage() {
 
         <div className="content-layout simple-layout">
           <section className="content-main">
-            <section className="grid overview-grid">
-              <article className="panel section-card">
-                <div className="section-head section-head-tight">
-                  <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                    <h2>今日待办</h2>
-                    <HelpIcon tips={[
-                      "显示今日需要跟进的待办任务，按优先级排列。",
-                      "点击\"📝 快速记录工作\"添加新的工作记录。",
-                      "点击\"+ 添加任务\"创建新的待办任务。",
-                      "点击时间轴上的卡片可直接编辑或删除。",
-                    ]} />
-                  </div>
-                  <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-                    <button
-                      className="ghost-button"
-                      type="button"
-                      onClick={() => setShowWorkRecordPanel(true)}
-                    >
-                      📝 快速记录工作
-                    </button>
-                    <button
-                      className="ghost-button"
-                      type="button"
-                      onClick={() => setShowTaskFormPanel(true)}
-                    >
-                      + 添加任务
-                    </button>
-                  </div>
-                </div>
-                <div className="focus-list">
-                  {todayFocus.length > 0 ? (
-                    todayFocus.map((item) => (
-                      <div key={item.id} className="focus-item" style={{
-                        padding: '16px',
-                        marginBottom: '12px',
-                        background: 'var(--card-bg)',
-                        border: '1px solid var(--border-color)',
-                        borderRadius: '8px',
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'flex-start',
-                        gap: '16px'
-                      }}>
-                        <div style={{ flex: 1 }}>
-                          <h3 style={{ margin: '0 0 6px 0', fontSize: '1rem', color: 'var(--text)' }}>{item.title}</h3>
-                          <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--muted)' }}>
-                            {item.department ?? "未指定部门"} · {item.contactPerson ?? "未指定联系人"}
-                          </p>
-                        </div>
-                        <div className="focus-meta" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '6px', flexShrink: 0 }}>
-                          <span className={`priority priority-${item.priority}`} style={{ fontSize: '0.75rem' }}>{item.priority}</span>
-                          <strong style={{ fontSize: '0.85rem', color: 'var(--text)' }}>{formatDateTime(item.dueDate)}</strong>
-                        </div>
-                      </div>
-                    ))
-                  ) : (
-                    <div style={{ padding: '24px', textAlign: 'center', color: 'var(--muted)' }}>
-                      <p>暂无今日待办</p>
-                    </div>
-                  )}
-                </div>
-              </article>
-            </section>
-
+            {/* 时间轴 —— 第一个功能模块，独占全宽 */}
             <section className="grid overview-grid">
               <article className="panel section-card">
                 <div className="section-head section-head-tight">
@@ -387,6 +342,74 @@ export default function HomePage() {
               </article>
             </section>
 
+            {/* 今日待办 + 今日工作记录 并排 */}
+            <div className="two-col">
+              <section className="grid overview-grid">
+                <article className="panel section-card">
+                  <div className="section-head section-head-tight">
+                    <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                      <h2>今日待办</h2>
+                      <HelpIcon tips={[
+                        "显示今日需要跟进的待办任务，按优先级排列。",
+                        "使用顶部\"📝 快速记录工作\"按钮记录工作。",
+                        "使用顶部\"+ 添加任务\"按钮创建待办。",
+                        "点击时间轴上的卡片可直接编辑或删除。",
+                      ]} />
+                    </div>
+                  </div>
+                  <div className="focus-list">
+                    {todayFocus.length > 0 ? (
+                      todayFocus.map((item) => (
+                        <div key={item.id} className="focus-item" style={{
+                          padding: '16px',
+                          marginBottom: '12px',
+                          background: 'var(--card-bg)',
+                          border: '1px solid var(--border-color)',
+                          borderRadius: '8px',
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'flex-start',
+                          gap: '16px'
+                        }}>
+                          <div style={{ flex: 1 }}>
+                            <h3 style={{ margin: '0 0 6px 0', fontSize: '1rem', color: 'var(--text)' }}>{item.title}</h3>
+                            <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--muted)' }}>
+                              {item.department ?? "未指定部门"} · {item.contactPerson ?? "未指定联系人"}
+                            </p>
+                          </div>
+                          <div className="focus-meta" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '6px', flexShrink: 0 }}>
+                            <span className={`priority priority-${item.priority}`} style={{ fontSize: '0.75rem' }}>{item.priority}</span>
+                            <strong style={{ fontSize: '0.85rem', color: 'var(--text)' }}>{formatDateTime(item.dueDate)}</strong>
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div style={{ padding: '24px', textAlign: 'center', color: 'var(--muted)' }}>
+                        <p>暂无今日待办</p>
+                      </div>
+                    )}
+                  </div>
+                </article>
+              </section>
+
+              <section className="grid overview-grid">
+                <article className="panel section-card">
+                  <div className="section-head section-head-tight">
+                    <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                      <h2>今日工作记录</h2>
+                      <HelpIcon tips={[
+                        "以时间线形式展示今日新增的工作记录。",
+                        "使用顶部\"📝 快速记录工作\"按钮添加记录。",
+                        "每条记录包含标题、详情、标签和关联待办。",
+                        "点击时间轴上的记录卡片可编辑或删除。",
+                      ]} />
+                    </div>
+                  </div>
+                  <DiaryTimeline events={todayRecords} />
+                </article>
+              </section>
+            </div>
+
             <section className="grid overview-grid">
               <article className="panel section-card">
                 <div className="section-head section-head-tight">
@@ -416,34 +439,17 @@ export default function HomePage() {
                     </select>
                   </div>
                 </div>
-              <TodoTree nodes={todoTree} linkedEventTitles={linkedEventTitles} maxDisplay={showAllTodos ? undefined : 3} onTodoClick={setEditingTodo} />
-              {todoTree.length > 3 && (
-                <button 
-                  className="ghost-button" 
-                  type="button"
-                  onClick={() => setShowAllTodos(!showAllTodos)}
-                  style={{ marginTop: '12px', width: '100%' }}
-                >
-                  {showAllTodos ? "收起" : `展开全部 (${todoTree.length} 个任务)`}
-                </button>
-              )}
-            </article>
-            </section>
-
-            <section className="grid overview-grid">
-              <article className="panel section-card">
-                <div className="section-head section-head-tight">
-                  <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                    <h2>今日工作记录</h2>
-                    <HelpIcon tips={[
-                      "以时间线形式展示今日新增的工作记录。",
-                      "点击\"📝 快速记录工作\"添加新的工作记录。",
-                      "每条记录包含标题、详情、标签和关联待办。",
-                      "点击时间轴上的记录卡片可编辑或删除。",
-                    ]} />
-                  </div>
-                </div>
-                <DiaryTimeline events={todayRecords} />
+                <TodoTree nodes={todoTree} linkedEventTitles={linkedEventTitles} maxDisplay={showAllTodos ? undefined : 3} onTodoClick={setEditingTodo} />
+                {todoTree.length > 3 && (
+                  <button
+                    className="ghost-button"
+                    type="button"
+                    onClick={() => setShowAllTodos(!showAllTodos)}
+                    style={{ marginTop: '12px', width: '100%' }}
+                  >
+                    {showAllTodos ? "收起" : `展开全部 (${todoTree.length} 个任务)`}
+                  </button>
+                )}
               </article>
             </section>
 

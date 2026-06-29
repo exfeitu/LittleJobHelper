@@ -44,10 +44,27 @@ export function useAppData(): AppData {
   // 初始值 false 避免 SSR hydration 不一致（localStorage 仅在浏览器可用）
   const [cloudEnabled, setCloudEnabled] = useState(false);
 
-  // 标记初始化完成 & 读取云同步状态（延迟到 Effect 确保 SSR/hydrate 安全）
+  // 初始化：标记就绪 + 读取云同步状态 + 自动从云端拉取（合并为单个 effect 减少 commit）
   useEffect(() => {
     setIsInitialized(true);
-    setCloudEnabled(loadSettings() !== null);
+    const cloudReady = loadSettings() !== null;
+    setCloudEnabled(cloudReady);
+
+    if (cloudReady) {
+      pullAndMerge(events, todos, customTags).then((result) => {
+        if (!result) return;
+        if (result.customTags.length > customTags.length) {
+          setCustomTags(result.customTags);
+        }
+        if (result.mergedFromRemote) {
+          const synced = syncLinkedItems(result.events, result.todos);
+          setData(synced);
+          saveEventsToStorage(synced.events);
+          saveTodosToStorage(synced.todos);
+        }
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // 数据变更 → 自动存 LocalStorage
@@ -64,28 +81,6 @@ export function useAppData(): AppData {
       saveCustomTags(customTags);
     }
   }, [customTags, isInitialized]);
-
-  // 初始化时自动从云端拉取并合并
-  useEffect(() => {
-    if (!isInitialized) return;
-
-    const settings = loadSettings();
-    if (!settings) return;
-
-    pullAndMerge(events, todos, customTags).then((result) => {
-      if (!result) return;
-      if (result.customTags.length > customTags.length) {
-        setCustomTags(result.customTags);
-      }
-      if (result.mergedFromRemote) {
-        const synced = syncLinkedItems(result.events, result.todos);
-        setData(synced);
-        saveEventsToStorage(synced.events);
-        saveTodosToStorage(synced.todos);
-      }
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isInitialized]);
 
   // 云同步自动推送（3 秒防抖）
   useEffect(() => {

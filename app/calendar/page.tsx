@@ -1,10 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { ExportPanel } from "@/components/export-panel";
 import { HelpIcon } from "@/components/help-icon";
 import { SettingsPanel } from "@/components/settings-panel";
+import { TaskFormPanel } from "@/components/task-form-panel";
+import { WorkRecordPanel } from "@/components/work-record-panel";
 import { syncLinkedItems } from "@/lib/utils";
 import { formatDateTime, formatDiaryDate, getTodayFocus } from "@/lib/utils";
 import { EventItem, Priority, TodoItem, TodoStatus } from "@/types";
@@ -30,15 +32,19 @@ function makeCalendarFormDefault(date: string) {
 
 export default function CalendarPage() {
   const {
-    events, todos, isInitialized, cloudEnabled,
-    setData, refreshCloudStatus,
+    events, todos, customTags, isInitialized, cloudEnabled,
+    addCustomTag, deleteCustomTag, setData, refreshCloudStatus,
   } = useAppData();
 
   const today = todayStr();
   const [selectedDate, setSelectedDate] = useState(today);
   const [form, setForm] = useState(() => makeCalendarFormDefault(today));
+  const [showWorkRecordPanel, setShowWorkRecordPanel] = useState(false);
+  const [showTaskFormPanel, setShowTaskFormPanel] = useState(false);
   const [showSettingsPanel, setShowSettingsPanel] = useState(false);
   const [showExportPanel, setShowExportPanel] = useState(false);
+  const [editingEvent, setEditingEvent] = useState<EventItem | undefined>(undefined);
+  const [editingTodo, setEditingTodo] = useState<TodoItem | undefined>(undefined);
 
   const eventsByDate = useMemo(() => events.filter((event) => event.startTime.startsWith(selectedDate)), [events, selectedDate]);
   const todosByDate = useMemo(() => todos.filter((todo) => todo.dueDate?.startsWith(selectedDate)), [todos, selectedDate]);
@@ -88,6 +94,58 @@ export default function CalendarPage() {
     setForm(makeCalendarFormDefault(form.date));
   };
 
+  const handleSaveTask = useCallback((todo: TodoItem) => {
+    const isUpdate = todos.some((t) => t.id === todo.id);
+    const nextTodos = isUpdate
+      ? todos.map((t) => (t.id === todo.id ? todo : t))
+      : [...todos, todo];
+    setData(syncLinkedItems(events, nextTodos));
+    setShowTaskFormPanel(false);
+    setEditingTodo(undefined);
+  }, [events, todos, setData]);
+
+  const handleSaveWorkRecord = useCallback((event: EventItem, linkedTodoId: string | null) => {
+    const isUpdate = events.some((e) => e.id === event.id);
+    const nextEvents = isUpdate
+      ? events.map((e) => (e.id === event.id ? event : e))
+      : [...events, event];
+    const nextTodos = linkedTodoId
+      ? todos.map((todo) =>
+          todo.id === linkedTodoId
+            ? { ...todo, linkedEventIds: Array.from(new Set([...(todo.linkedEventIds ?? []), event.id])) }
+            : todo,
+        )
+      : isUpdate
+        ? todos.map((todo) => ({
+            ...todo,
+            linkedEventIds: (todo.linkedEventIds ?? []).filter((id) => id !== event.id),
+          }))
+        : todos;
+    setData(syncLinkedItems(nextEvents, nextTodos));
+    setShowWorkRecordPanel(false);
+    setEditingEvent(undefined);
+  }, [events, todos, setData]);
+
+  const handleDeleteEvent = useCallback((id: string) => {
+    const nextEvents = events.filter((e) => e.id !== id);
+    const nextTodos = todos.map((todo) => ({
+      ...todo,
+      linkedEventIds: (todo.linkedEventIds ?? []).filter((eid) => eid !== id),
+    }));
+    setData(syncLinkedItems(nextEvents, nextTodos));
+    setEditingEvent(undefined);
+  }, [events, todos, setData]);
+
+  const handleDeleteTodo = useCallback((id: string) => {
+    const nextTodos = todos.filter((t) => t.id !== id);
+    const nextEvents = events.map((event) => ({
+      ...event,
+      linkedTodoIds: (event.linkedTodoIds ?? []).filter((tid) => tid !== id),
+    }));
+    setData(syncLinkedItems(nextEvents, nextTodos));
+    setEditingTodo(undefined);
+  }, [events, todos, setData]);
+
   return (
     <main className="app-shell">
       <section className="workspace-simple">
@@ -110,6 +168,24 @@ export default function CalendarPage() {
                 日历
               </Link>
             </nav>
+
+            {/* 快速记录工作 */}
+            <button
+              className="ghost-button"
+              type="button"
+              onClick={() => setShowWorkRecordPanel(true)}
+            >
+              📝 快速记录工作
+            </button>
+
+            {/* 添加任务 */}
+            <button
+              className="ghost-button"
+              type="button"
+              onClick={() => setShowTaskFormPanel(true)}
+            >
+              + 添加任务
+            </button>
 
             {/* 同步按钮 → 弹出设置面板 */}
             <button
@@ -278,6 +354,54 @@ export default function CalendarPage() {
           events={events}
           todos={todos}
           onClose={() => setShowExportPanel(false)}
+        />
+      )}
+
+      {showWorkRecordPanel && (
+        <WorkRecordPanel
+          events={events}
+          todos={todos}
+          linkedTodoTitles={Object.fromEntries(todos.map((todo) => [todo.id, todo.title]))}
+          customTags={customTags}
+          onTagCreated={addCustomTag}
+          onTagDeleted={deleteCustomTag}
+          onSave={handleSaveWorkRecord}
+          onClose={() => setShowWorkRecordPanel(false)}
+        />
+      )}
+
+      {showTaskFormPanel && (
+        <TaskFormPanel
+          customTags={customTags}
+          onTagCreated={addCustomTag}
+          onSave={handleSaveTask}
+          onClose={() => setShowTaskFormPanel(false)}
+        />
+      )}
+
+      {editingEvent && (
+        <WorkRecordPanel
+          events={events}
+          todos={todos}
+          linkedTodoTitles={Object.fromEntries(todos.map((todo) => [todo.id, todo.title]))}
+          editEvent={editingEvent}
+          customTags={customTags}
+          onTagDeleted={deleteCustomTag}
+          onTagCreated={addCustomTag}
+          onSave={handleSaveWorkRecord}
+          onDelete={handleDeleteEvent}
+          onClose={() => setEditingEvent(undefined)}
+        />
+      )}
+
+      {editingTodo && (
+        <TaskFormPanel
+          editTodo={editingTodo}
+          customTags={customTags}
+          onTagCreated={addCustomTag}
+          onSave={handleSaveTask}
+          onDelete={handleDeleteTodo}
+          onClose={() => setEditingTodo(undefined)}
         />
       )}
 

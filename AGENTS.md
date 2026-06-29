@@ -36,7 +36,7 @@ npm run lint    # ESLint
 | 6 | 不改 `next.config.mjs` 的 `output` | 会导致部署失败 |
 | 7 | 不直接操作 LocalStorage | 必须通过 `lib/storage.ts` |
 | 8 | 不在组件中直接修改 events/todos 数组 | 必须经 `setData()` + `syncLinkedItems()` |
-| 9 | 不加新的 npm 依赖 | 保持零依赖云同步 |
+| 9 | 直接执行任务不提供确认框 | 保持高效开发 |
 | 10 | 不引入测试框架 | 当前无测试体系 |
 
 ## 关键文件速查

@@ -19,6 +19,7 @@
 
 html {
   scroll-behavior: smooth;
+  scrollbar-gutter: auto;
 }
 
 body {
@@ -33,7 +34,7 @@ body {
 }
 
 .app-shell {
-  width: min(1520px, calc(100% - 28px));
+  width: min(1100px, calc(100% - 28px));
   margin: 0 auto;
   padding: 20px 0 40px;
 }
@@ -101,6 +102,12 @@ body {
 
 .simple-layout {
   align-items: start;
+}
+
+.two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
 }
 
 a {
@@ -393,8 +400,8 @@ button {
   overflow-x: auto;
   overflow-y: hidden;
   overscroll-behavior: contain;
-  padding-top: 48px;
-  padding-bottom: 36px;
+  padding-top: 32px;
+  padding-bottom: 24px;
   scrollbar-width: none;
   -ms-overflow-style: none;
 }
@@ -1232,6 +1239,12 @@ button {
 
   .line-event-card {
     width: 260px;
+  }
+}
+
+@media (max-width: 860px) {
+  .two-col {
+    grid-template-columns: 1fr;
   }
 }
 

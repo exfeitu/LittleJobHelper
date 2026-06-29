@@ -7,7 +7,7 @@ type DiaryProps = {
 
 export function DiaryTimeline({ events }: DiaryProps) {
   return (
-    <div className="diary-list">
+    <div className="diary-list" suppressHydrationWarning>
       {events.map((event) => (
         <article key={event.id} className="diary-entry">
           <div className="diary-time">

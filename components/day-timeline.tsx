@@ -54,8 +54,8 @@ const FULL_CARD_MAX_WIDTH = 320;
 const COMPACT_CARD_WIDTH = 8;
 const CARD_HORIZONTAL_GAP = 6;
 const COMPACT_SHIFT_THRESHOLD = 40;
-const LANE_HEIGHT = 128;
-const TRACK_PADDING = 64;
+const LANE_HEIGHT = 108; // 行高（纵向拉宽 50%）
+const TRACK_PADDING = 32;
 const TODO_MIN_DURATION_MS = 30 * 60 * 1000; // 待办最低 30 分钟宽
 
 const PRIORITY_LABEL: Record<string, string> = { high: "高", medium: "中", low: "低" };
@@ -177,7 +177,7 @@ export function DayTimeline({ events, todos = [], linkedTodoTitles = {}, onEvent
   const prevScaleRef = useRef(scale);
 
   const [expandedCompactId, setExpandedCompactId] = useState<string | null>(null);
-  const [containerWidth, setContainerWidth] = useState(800);
+  const [containerWidth, setContainerWidth] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
   const initializedRef = useRef(false);
 
@@ -213,13 +213,23 @@ export function DayTimeline({ events, todos = [], linkedTodoTitles = {}, onEvent
     if (container) setViewportLeft(container.scrollLeft);
   }, [scale]);
 
+  // 首帧立即读取容器宽度（useLayoutEffect 在 paint 前同步执行，消除白屏）
+  useLayoutEffect(() => {
+    const container = scrollRef.current;
+    if (container) {
+      const w = container.clientWidth;
+      if (w > 0) setContainerWidth(w);
+    }
+  }, []);
+
   // 拖动平移
   const isDragging = useRef(false);
   const dragStartX = useRef(0);
   const dragStartScrollLeft = useRef(0);
   const [dragging, setDragging] = useState(false);
 
-  useEffect(() => {
+  // 后续尺寸变化由 ResizeObserver 处理（useLayoutEffect 避免 ResizeObserver 的异步延迟）
+  useLayoutEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
     const ro = new ResizeObserver((entries) => {
@@ -314,7 +324,7 @@ export function DayTimeline({ events, todos = [], linkedTodoTitles = {}, onEvent
     }
   }, [scale, shellWidth, containerWidth, totalDays]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (initializedRef.current) return;
     const container = scrollRef.current;
     if (!container || !containerWidth || !totalRangeMs) return;
@@ -416,40 +426,53 @@ export function DayTimeline({ events, todos = [], linkedTodoTitles = {}, onEvent
     });
   }, [stableItems, shellWidth]);
 
+  // 视口虚拟化：仅保留可见范围内的条目（memoized 避免每帧 filter）
+  const visiblePositionedItems = useMemo(() => {
+    if (!positionedItems.length) return [];
+    return positionedItems.filter((item) => {
+      const itemLeftPx = (item.leftPercent / 100) * shellWidth;
+      const itemRightPx = itemLeftPx + item.cardWidthPx;
+      return itemRightPx >= visibleRange.left && itemLeftPx <= visibleRange.right;
+    });
+  }, [positionedItems, shellWidth, visibleRange]);
+
   const trackHeight = useMemo(() => {
     const maxTop = stableItems.reduce((m, e) => (e.side === "top" ? Math.max(m, e.stack) : m), -1);
     const maxBottom = stableItems.reduce((m, e) => (e.side === "bottom" ? Math.max(m, e.stack) : m), -1);
     const needed = (Math.max(maxTop, maxBottom) + 1) * LANE_HEIGHT * 2 + TRACK_PADDING * 2;
-    return Math.max(380, needed);
+    return Math.max(260, needed);
   }, [stableItems]);
 
-  // 按周聚合计数：显示时间范围内每周有多少工作记录和待办
+  // 按周聚合计数：单次遍历 O(n)，以周一为周起始对齐
   const weekBrackets = useMemo(() => {
-    if (!timelineDays.length) return [];
-    const weeks: { start: Date; end: Date; eventCount: number; todoCount: number }[] = [];
-    let cursor = startOfDay(timelineDays[0]);
-    const lastDay = new Date(timelineDays[timelineDays.length - 1]);
-    while (cursor <= lastDay) {
-      const weekStart = new Date(cursor);
-      const weekEnd = new Date(cursor);
-      weekEnd.setDate(weekEnd.getDate() + 6);
-      const ws = weekStart.getTime();
-      const we = weekEnd.getTime() + 86400000;
-      const eventCount = allItems.filter((it) => {
-        const t = new Date(it.startTime).getTime();
-        return it.kind === "event" && t >= ws && t < we;
-      }).length;
-      const todoCount = allItems.filter((it) => {
-        const t = new Date(it.startTime).getTime();
-        return it.kind === "todo" && t >= ws && t < we;
-      }).length;
-      if (eventCount > 0 || todoCount > 0) {
-        weeks.push({ start: weekStart, end: weekEnd, eventCount, todoCount });
+    if (!allItems.length) return [];
+    const weekMap = new Map<number, { start: Date; end: Date; eventCount: number; todoCount: number }>();
+
+    for (const item of allItems) {
+      const d = new Date(item.startTime);
+      const dayOfWeek = d.getDay();
+      // 周日(0)→上周一，周一(1)→当天，周二(2)→昨天... 周六(6)→上周五
+      const diffToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+      const monday = new Date(d);
+      monday.setDate(d.getDate() + diffToMonday);
+      monday.setHours(0, 0, 0, 0);
+      const weekKey = monday.getTime();
+
+      if (!weekMap.has(weekKey)) {
+        const sunday = new Date(monday);
+        sunday.setDate(sunday.getDate() + 6);
+        weekMap.set(weekKey, { start: monday, end: sunday, eventCount: 0, todoCount: 0 });
       }
-      cursor.setDate(cursor.getDate() + 7);
+
+      const entry = weekMap.get(weekKey)!;
+      if (item.kind === "event") entry.eventCount++;
+      else entry.todoCount++;
     }
-    return weeks;
-  }, [timelineDays, allItems]);
+
+    return Array.from(weekMap.values())
+      .filter((w) => w.eventCount > 0 || w.todoCount > 0)
+      .sort((a, b) => a.start.getTime() - b.start.getTime());
+  }, [allItems]);
 
   const axisDensity = scale > 1.2 ? 1 : scale > 0.5 ? 2 : 4;
 
@@ -597,7 +620,7 @@ export function DayTimeline({ events, todos = [], linkedTodoTitles = {}, onEvent
   );
 
   return (
-    <div className="line-timeline">
+    <div className="line-timeline" suppressHydrationWarning>
       {!hasExternalToolbar && (
         <div className="line-timeline-toolbar">
           <button className="axis-zoom-button" onClick={() => setScale(Math.min(MAX_SCALE, scale + SCALE_STEP))} type="button">＋</button>
@@ -661,8 +684,8 @@ export function DayTimeline({ events, todos = [], linkedTodoTitles = {}, onEvent
               return <div key={day} className="line-day-chip" style={{ left: `${dayLeftPercent}%` }}>{formatDayLabel(day)}</div>;
             })}
 
-            {/* 统一渲染时间轴条目（事件 + 待办） */}
-            {positionedItems.map((item) => {
+            {/* 统一渲染时间轴条目（事件 + 待办）—— 使用 memoized 可见条目 */}
+            {visiblePositionedItems.map((item) => {
               const isExpanded = expandedCompactId === item.id;
               const renderCompact = item.compact;
               const showTooltip = item.compact && isExpanded;

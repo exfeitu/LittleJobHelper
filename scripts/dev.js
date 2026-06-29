@@ -6,8 +6,10 @@ const URL = `http://localhost:${PORT}${BASE_PATH}`;
 
 console.log(`▶ 启动 Next.js 开发服务器...\n`);
 
+// shell: true 确保 Windows 下能找到 npx.cmd
 const child = spawn('npx', ['next', 'dev', '-p', String(PORT)], {
   stdio: ['inherit', 'pipe', 'inherit'],
+  shell: true,
 });
 
 child.stdout.on('data', (data) => {
