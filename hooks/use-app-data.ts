@@ -41,11 +41,13 @@ export function useAppData(): AppData {
   });
 
   const [customTags, setCustomTags] = useState<string[]>(() => loadCustomTags());
-  const [cloudEnabled, setCloudEnabled] = useState(() => loadSettings() !== null);
+  // 初始值 false 避免 SSR hydration 不一致（localStorage 仅在浏览器可用）
+  const [cloudEnabled, setCloudEnabled] = useState(false);
 
-  // 标记初始化完成（延迟到 Effect 确保 SSR/hydrate 安全）
+  // 标记初始化完成 & 读取云同步状态（延迟到 Effect 确保 SSR/hydrate 安全）
   useEffect(() => {
     setIsInitialized(true);
+    setCloudEnabled(loadSettings() !== null);
   }, []);
 
   // 数据变更 → 自动存 LocalStorage
