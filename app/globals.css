@@ -1378,11 +1378,13 @@ button {
 }
 
 /* ===== 工作记录面板 ===== */
-.work-record-panel .record-section {
+.work-record-panel .record-section,
+.task-form-panel .record-section {
   margin-bottom: 20px;
 }
 
-.work-record-panel .record-label {
+.work-record-panel .record-label,
+.task-form-panel .record-label {
   display: block;
   margin-bottom: 6px;
   font-size: 0.9rem;
@@ -1390,7 +1392,8 @@ button {
   color: var(--text);
 }
 
-.work-record-panel .record-label .required {
+.work-record-panel .record-label .required,
+.task-form-panel .record-label .required {
   color: var(--danger);
 }
 
@@ -1608,6 +1611,43 @@ button {
 .work-record-panel select:focus {
   border-color: var(--accent);
   outline: none;
+}
+
+/* ===== 任务表单面板 ===== */
+.task-form-panel select {
+  width: 100%;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  font-size: 0.9rem;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.task-form-panel .task-form-grid input,
+.task-form-panel .record-section > input:not(.record-title-input):not(.record-detail-input) {
+  width: 100%;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  font-size: 0.9rem;
+  color: var(--text);
+}
+
+.task-form-panel select:focus,
+.task-form-panel .task-form-grid input:focus,
+.task-form-panel .record-section > input:not(.record-title-input):not(.record-detail-input):focus {
+  border-color: var(--accent);
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(79, 143, 99, 0.1);
+}
+
+.task-form-panel .task-form-grid > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 /* 错误提示 */

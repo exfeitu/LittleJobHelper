@@ -376,12 +376,9 @@ export function DayTimeline({ events, todos = [], linkedTodoTitles = {}, onEvent
         laneEndMinutes[lane] = endMinute;
       }
 
-      // 待办强制放在 bottom 侧，事件放在 top 侧
-      const adjustedLane = item.kind === "todo"
-        ? lane % 2 === 0 ? lane + 1 : lane
-        : lane % 2 === 0 ? lane : lane + 1;
-      const stack = Math.floor(adjustedLane / 2);
-      const side: "top" | "bottom" = adjustedLane % 2 === 0 ? "top" : "bottom";
+      // 自然交错排列：lane 0,2,4…=top，1,3,5…=bottom
+      const stack = Math.floor(lane / 2);
+      const side: "top" | "bottom" = lane % 2 === 0 ? "top" : "bottom";
 
       const leftPercent = totalRangeMs > 0 ? ((startMs - timeOrigin) / totalRangeMs) * 100 : 0;
       const widthPercent = totalRangeMs > 0 ? (Math.max(60000, endMs - startMs) / totalRangeMs) * 100 : 0;
@@ -391,7 +388,7 @@ export function DayTimeline({ events, todos = [], linkedTodoTitles = {}, onEvent
 
       return {
         ...item,
-        lane: adjustedLane, stack, side,
+        lane, stack, side,
         color: colors[Math.max(0, colorIndex) % colors.length],
         leftPercent, widthPercent,
       };
