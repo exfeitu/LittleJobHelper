@@ -180,6 +180,7 @@ export function DayTimeline({ events, todos = [], linkedTodoTitles = {}, onEvent
   const [containerWidth, setContainerWidth] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
   const initializedRef = useRef(false);
+  const [timelineReady, setTimelineReady] = useState(false);
 
   // 视口虚拟化：只渲染可视区域附近的元素
   const [viewportLeft, setViewportLeft] = useState(0);
@@ -333,6 +334,7 @@ export function DayTimeline({ events, todos = [], linkedTodoTitles = {}, onEvent
     const todayPx = todayRatio * shellWidth;
     container.scrollLeft = Math.max(0, todayPx - containerWidth / 2);
     initializedRef.current = true;
+    setTimelineReady(true);
   }, [containerWidth, shellWidth, timeOrigin, totalRangeMs, todayStart]);
 
   // 响应外部"回到今天"触发
@@ -631,7 +633,7 @@ export function DayTimeline({ events, todos = [], linkedTodoTitles = {}, onEvent
           </span>
         </div>
       )}
-      <div className="line-timeline-hscroll" ref={scrollRef} onWheel={handleWheel} onMouseDown={handleMouseDown} style={{ cursor: dragging ? "grabbing" : "grab" }}>
+      <div className="line-timeline-hscroll" ref={scrollRef} onWheel={handleWheel} onMouseDown={handleMouseDown} style={{ cursor: dragging ? "grabbing" : "grab", opacity: timelineReady ? 1 : 0, transition: "opacity 0.15s ease" }}>
         <div className="line-timeline-shell" style={{ width: shellWidth, height: trackHeight }}>
           <div className="line-timeline-year">{yearLabel}</div>
           <div className="line-timeline-track">
