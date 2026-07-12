@@ -800,6 +800,23 @@ button {
   color: #183626;
   text-align: left;
   cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, max-width 0.2s ease, max-height 0.2s ease, z-index 0s;
+}
+
+.line-event-card:hover,
+.line-event-card:focus-visible {
+  outline: none;
+  z-index: 50;
+  transform: translateX(var(--card-offset-x, 0px)) scale(1.03);
+  max-width: 420px;
+  max-height: none;
+  overflow: visible;
+  box-shadow: 0 16px 36px rgba(110, 156, 118, 0.28);
+}
+
+.line-event-card:hover p {
+  -webkit-line-clamp: unset;
+  overflow: visible;
 }
 
 .line-event-top .line-event-card {
@@ -834,122 +851,8 @@ button {
   overflow: hidden;
 }
 
-/* 紧凑模式 */
-.line-event.compact .line-event-card {
-  width: var(--card-width);
-  max-width: 12px;
-  padding: 1px 2px;
-  overflow: hidden;
-  min-height: 3px;
-}
-
-.line-event.compact .line-event-stem {
-  height: calc(var(--stack-offset) + var(--lane-height) * 0.5) !important;
-}
-
-/* 紧凑模式：细色线 */
-.compact-bar {
-  height: 4px;
-  border-radius: 2px;
-  background: var(--event-color);
-  width: 100%;
-}
-
-.line-event-card:hover,
-.line-event-card:focus-visible {
-  outline: none;
-  transform: translateY(-2px);
-  box-shadow: 0 14px 30px rgba(110, 156, 118, 0.2);
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
-}
-
-.line-event.compact .line-event-card:hover {
-  transform: translateY(-2px);
-  transition: transform 0.15s ease;
-}
-
-/* 悬停展开工具提示：向时间轴方向展开 */
-.line-expand-tooltip {
-  position: absolute;
-  border-radius: 14px;
-  border: 1px solid color-mix(in srgb, var(--event-color) 60%, rgba(108, 156, 120, 0.12));
-  background: color-mix(in srgb, white 96%, var(--event-color) 12%);
-  box-shadow: 0 12px 32px rgba(110, 156, 118, 0.22);
-  color: #183626;
-  text-align: left;
-  padding: 8px 10px;
-  pointer-events: none;
-}
-
-.line-expand-tooltip.line-todo-card {
-  border-style: dashed;
-}
-
-.line-expand-tooltip-top {
-  top: calc(-4px - var(--stack-offset) - var(--lane-height));
-  bottom: auto;
-}
-
-.line-expand-tooltip-bottom {
-  bottom: calc(-4px - var(--stack-offset) - var(--lane-height));
-  top: auto;
-}
-
-.line-expand-tooltip .line-event-time {
-  margin-bottom: 2px;
-  color: #28533a;
-  font-size: 0.78rem;
-}
-
-.line-expand-tooltip h4 {
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  margin: 0 0 2px;
-  font-size: 0.92rem;
-}
-
-.line-expand-tooltip p {
-  margin: 0;
-  color: #4f6f5b;
-  font-size: 0.82rem;
-  line-height: 1.35;
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.line-expand-tooltip .line-todo-meta {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-  margin-bottom: 2px;
-}
-
-.line-expand-tooltip .compact-tags {
-  margin-top: 4px;
-}
-
-.line-expand-tooltip .link-badge-group-event {
-  margin-bottom: 3px;
-}
-
-.line-expand-tooltip .link-badge-event {
-  margin-bottom: 3px;
-}
-
 .compact-tags {
   margin-top: 4px;
-}
-
-.compact-link-dot {
-  position: absolute;
-  top: 4px;
-  right: 6px;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--accent);
 }
 
 .diary-entry {
@@ -998,15 +901,6 @@ button {
 
 .link-badge-event {
   margin-bottom: 3px;
-}
-
-.compact-link-dot {
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  margin-left: 8px;
-  border-radius: 50%;
-  background: #2f5d3e;
 }
 
 .tag,
@@ -1292,9 +1186,6 @@ button {
     padding: 8px 10px;
   }
 
-  .line-event.compact .line-event-card {
-    max-width: 90px;
-  }
 
   .axis-hour-label {
     font-size: 0.65rem;

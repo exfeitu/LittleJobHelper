@@ -40,7 +40,6 @@ type PositionedItem = TimelineItem & {
   widthPercent: number;
   cardOffsetXPx: number;
   cardWidthPx: number;
-  compact: boolean;
 };
 
 const MIN_SCALE = 0.03;
@@ -51,9 +50,7 @@ const EVENT_COLORS = ["#5fa86e", "#8c6fd1", "#4f9d9d", "#c96f91", "#7ea95b", "#5
 const TODO_COLORS = ["#e8964a", "#d97050", "#c98a4f", "#e0a040", "#d97842", "#e8883a"];
 const FULL_CARD_MIN_WIDTH = 60;
 const FULL_CARD_MAX_WIDTH = 320;
-const COMPACT_CARD_WIDTH = 8;
 const CARD_HORIZONTAL_GAP = 6;
-const COMPACT_SHIFT_THRESHOLD = 40;
 const LANE_HEIGHT = 108; // 行高（纵向拉宽 50%）
 const TRACK_PADDING = 32;
 const TODO_MIN_DURATION_MS = 30 * 60 * 1000; // 待办最低 30 分钟宽
@@ -176,7 +173,6 @@ export function DayTimeline({ events, todos = [], linkedTodoTitles = {}, onEvent
   const wheelZoomingRef = useRef(false);
   const prevScaleRef = useRef(scale);
 
-  const [expandedCompactId, setExpandedCompactId] = useState<string | null>(null);
   const [containerWidth, setContainerWidth] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
   const initializedRef = useRef(false);
@@ -405,22 +401,18 @@ export function DayTimeline({ events, todos = [], linkedTodoTitles = {}, onEvent
     return stableItems.map((item) => {
       const naturalLeftPx = (item.leftPercent / 100) * shellWidth;
       const naturalWidthPx = Math.max(40, (item.widthPercent / 100) * shellWidth);
-      const regularCardWidth = Math.min(FULL_CARD_MAX_WIDTH, Math.max(FULL_CARD_MIN_WIDTH, naturalWidthPx));
+      const cardWidthPx = Math.min(FULL_CARD_MAX_WIDTH, Math.max(FULL_CARD_MIN_WIDTH, naturalWidthPx));
 
       const sameSideRight = laneRights[item.side][item.stack] ?? -Infinity;
       const shiftedLeftPx = Math.max(naturalLeftPx, sameSideRight + CARD_HORIZONTAL_GAP);
-      const cardShiftPx = shiftedLeftPx - naturalLeftPx;
-
-      const compact = cardShiftPx >= COMPACT_SHIFT_THRESHOLD;
-      const cardWidthPx = compact ? COMPACT_CARD_WIDTH : regularCardWidth;
+      const cardOffsetXPx = shiftedLeftPx - naturalLeftPx;
 
       laneRights[item.side][item.stack] = shiftedLeftPx + cardWidthPx;
 
       return {
         ...item,
-        cardOffsetXPx: cardShiftPx,
+        cardOffsetXPx,
         cardWidthPx,
-        compact,
       };
     });
   }, [stableItems, shellWidth]);
@@ -685,23 +677,14 @@ export function DayTimeline({ events, todos = [], linkedTodoTitles = {}, onEvent
 
             {/* 统一渲染时间轴条目（事件 + 待办）—— 使用 memoized 可见条目 */}
             {visiblePositionedItems.map((item) => {
-              const isExpanded = expandedCompactId === item.id;
-              const renderCompact = item.compact;
-              const showTooltip = item.compact && isExpanded;
               const isTodo = item.kind === "todo";
-              const tooltipStyle = showTooltip ? {
-                left: `var(--card-offset-x, 0px)`,
-                width: `${item.cardWidthPx}px`,
-                maxWidth: "320px",
-                zIndex: 100,
-              } as CSSProperties : undefined;
               const style = {
                 left: `${item.leftPercent}%`,
                 width: `${item.widthPercent}%`,
                 "--event-color": item.color,
                 "--stack-offset": `${item.stack * LANE_HEIGHT}px`,
                 "--card-offset-x": `${item.cardOffsetXPx}px`,
-                "--card-width": `${renderCompact ? COMPACT_CARD_WIDTH : item.cardWidthPx}px`,
+                "--card-width": `${item.cardWidthPx}px`,
                 "--lane-height": `${LANE_HEIGHT}px`,
               } as CSSProperties;
 
@@ -716,7 +699,7 @@ export function DayTimeline({ events, todos = [], linkedTodoTitles = {}, onEvent
               return (
                 <article
                   key={`${item.kind}-${item.id}`}
-                  className={`line-event line-event-${item.side} ${renderCompact ? "compact" : ""} ${isTodo ? "line-todo" : ""}`}
+                  className={`line-event line-event-${item.side} ${isTodo ? "line-todo" : ""}`}
                   style={style}
                 >
                   <div className="line-event-axis-group">
@@ -727,75 +710,32 @@ export function DayTimeline({ events, todos = [], linkedTodoTitles = {}, onEvent
                     className={`line-event-card ${isTodo ? "line-todo-card" : ""}`}
                     type="button"
                     onClick={handleClick}
-                    onMouseEnter={() => { if (item.compact) setExpandedCompactId(item.id); }}
-                    onMouseLeave={() => { if (item.compact) setExpandedCompactId((v) => (v === item.id ? null : v)); }}
                   >
-                    {renderCompact ? (
-                      <div className="compact-bar" title={item.title}>
-                        {!isTodo && item.eventData?.linkedTodoIds?.some((id) => linkedTodoTitles[id]) ? (
-                          <span className="compact-link-dot" />
-                        ) : null}
+                    <div className="line-event-time">
+                      {isTodo ? "📌 待办" : `${formatClock(item.startTime)} — ${formatClock(item.endTime)}`}
+                    </div>
+                    {!isTodo && item.eventData?.linkedTodoIds?.length ? (
+                      <div className="link-badge-group link-badge-group-event">
+                        {item.eventData.linkedTodoIds.filter((id) => linkedTodoTitles[id]).map((id) => (
+                          <div key={id} className="link-badge link-badge-event">关联待办：{linkedTodoTitles[id]}</div>
+                        ))}
+                      </div>
+                    ) : null}
+                    <h4>{item.title}</h4>
+                    {isTodo && item.todoData ? (
+                      <div className="line-todo-meta">
+                        <span className={`line-todo-priority priority-${item.todoData.priority}`}>
+                          {PRIORITY_LABEL[item.todoData.priority] ?? item.todoData.priority}
+                        </span>
+                        <span className="line-todo-status">{STATUS_LABEL[item.todoData.status] ?? item.todoData.status}</span>
                       </div>
                     ) : (
-                      <>
-                        <div className="line-event-time">
-                          {isTodo ? "📌 待办" : `${formatClock(item.startTime)} — ${formatClock(item.endTime)}`}
-                        </div>
-                        {!isTodo && item.eventData?.linkedTodoIds?.length ? (
-                          <div className="link-badge-group link-badge-group-event">
-                            {item.eventData.linkedTodoIds.filter((id) => linkedTodoTitles[id]).map((id) => (
-                              <div key={id} className="link-badge link-badge-event">关联待办：{linkedTodoTitles[id]}</div>
-                            ))}
-                          </div>
-                        ) : null}
-                        <h4>{item.title}</h4>
-                        {isTodo && item.todoData ? (
-                          <div className="line-todo-meta">
-                            <span className={`line-todo-priority priority-${item.todoData.priority}`}>
-                              {PRIORITY_LABEL[item.todoData.priority] ?? item.todoData.priority}
-                            </span>
-                            <span className="line-todo-status">{STATUS_LABEL[item.todoData.status] ?? item.todoData.status}</span>
-                          </div>
-                        ) : (
-                          <p>{item.detail}</p>
-                        )}
-                        <div className="tag-row compact-tags">
-                          {item.tags.map((tag) => <span key={tag} className="tag chip">{tag}</span>)}
-                        </div>
-                      </>
+                      <p>{item.detail}</p>
                     )}
-                  </button>
-                  {showTooltip && (
-                    <div
-                      className={`line-expand-tooltip line-expand-tooltip-${item.side} ${isTodo ? "line-todo-card" : ""}`}
-                      style={tooltipStyle}
-                    >
-                      <div className="line-event-time">
-                        {isTodo ? "📌 待办" : `${formatClock(item.startTime)} — ${formatClock(item.endTime)}`}
-                      </div>
-                      {!isTodo && item.eventData?.linkedTodoIds?.length ? (
-                        <div className="link-badge-group link-badge-group-event">
-                          {item.eventData.linkedTodoIds.filter((id) => linkedTodoTitles[id]).map((id) => (
-                            <div key={id} className="link-badge link-badge-event">关联待办：{linkedTodoTitles[id]}</div>
-                          ))}
-                        </div>
-                      ) : null}
-                      <h4>{item.title}</h4>
-                      {isTodo && item.todoData ? (
-                        <div className="line-todo-meta">
-                          <span className={`line-todo-priority priority-${item.todoData.priority}`}>
-                            {PRIORITY_LABEL[item.todoData.priority] ?? item.todoData.priority}
-                          </span>
-                          <span className="line-todo-status">{STATUS_LABEL[item.todoData.status] ?? item.todoData.status}</span>
-                        </div>
-                      ) : (
-                        <p>{item.detail}</p>
-                      )}
-                      <div className="tag-row compact-tags">
-                        {item.tags.map((tag) => <span key={tag} className="tag chip">{tag}</span>)}
-                      </div>
+                    <div className="tag-row compact-tags">
+                      {item.tags.map((tag) => <span key={tag} className="tag chip">{tag}</span>)}
                     </div>
-                  )}
+                  </button>
                 </article>
               );
             })}
