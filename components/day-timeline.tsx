@@ -33,7 +33,6 @@ type TimelineItem = {
 
 type PositionedItem = TimelineItem & {
   color: string;
-  lane: number;
   stack: number;
   side: "top" | "bottom";
   leftPercent: number;
@@ -355,7 +354,10 @@ export function DayTimeline({ events, todos = [], linkedTodoTitles = {}, onEvent
   // 不依赖 scale/shellWidth 的稳定计算（date解析、lane分配、颜色）
   const stableItems = useMemo(() => {
     if (!timelineDays.length) return [];
-    const laneEndMinutes: number[] = [];
+    // 分离 top/bottom 两个 lane 池，强制上下交错
+    const topLaneEnds: number[] = [];
+    const bottomLaneEnds: number[] = [];
+    let lastSide: "top" | "bottom" = "bottom"; // 首个条目优先放上方
 
     let eventColorIdx = 0;
     let todoColorIdx = 0;
@@ -366,17 +368,38 @@ export function DayTimeline({ events, todos = [], linkedTodoTitles = {}, onEvent
       const startMinute = (startMs - timeOrigin) / 60000;
       const endMinute = (endMs - timeOrigin) / 60000;
 
-      let lane = laneEndMinutes.findIndex((v) => v <= startMinute);
-      if (lane === -1) {
-        lane = laneEndMinutes.length;
-        laneEndMinutes.push(endMinute);
+      // 优先选与上一个条目相反的一侧
+      const prefSide: "top" | "bottom" = lastSide === "top" ? "bottom" : "top";
+      const altSide: "top" | "bottom" = prefSide === "top" ? "bottom" : "top";
+
+      const prefLanes = prefSide === "top" ? topLaneEnds : bottomLaneEnds;
+      const altLanes = altSide === "top" ? topLaneEnds : bottomLaneEnds;
+
+      let side: "top" | "bottom";
+      let stack: number;
+
+      // 1) 优先选反侧的空闲 lane
+      const prefIdx = prefLanes.findIndex((v) => v <= startMinute);
+      if (prefIdx !== -1) {
+        side = prefSide;
+        stack = prefIdx;
+        prefLanes[prefIdx] = endMinute;
       } else {
-        laneEndMinutes[lane] = endMinute;
+        // 2) 反侧无空闲，尝试同侧
+        const altIdx = altLanes.findIndex((v) => v <= startMinute);
+        if (altIdx !== -1) {
+          side = altSide;
+          stack = altIdx;
+          altLanes[altIdx] = endMinute;
+        } else {
+          // 3) 两侧都满了，在反侧新开一层
+          side = prefSide;
+          stack = prefLanes.length;
+          prefLanes.push(endMinute);
+        }
       }
 
-      // 自然交错排列：lane 0,2,4…=top，1,3,5…=bottom
-      const stack = Math.floor(lane / 2);
-      const side: "top" | "bottom" = lane % 2 === 0 ? "top" : "bottom";
+      lastSide = side;
 
       const leftPercent = totalRangeMs > 0 ? ((startMs - timeOrigin) / totalRangeMs) * 100 : 0;
       const widthPercent = totalRangeMs > 0 ? (Math.max(60000, endMs - startMs) / totalRangeMs) * 100 : 0;
@@ -386,7 +409,7 @@ export function DayTimeline({ events, todos = [], linkedTodoTitles = {}, onEvent
 
       return {
         ...item,
-        lane, stack, side,
+        stack, side,
         color: colors[Math.max(0, colorIndex) % colors.length],
         leftPercent, widthPercent,
       };
@@ -430,8 +453,10 @@ export function DayTimeline({ events, todos = [], linkedTodoTitles = {}, onEvent
   const trackHeight = useMemo(() => {
     const maxTop = stableItems.reduce((m, e) => (e.side === "top" ? Math.max(m, e.stack) : m), -1);
     const maxBottom = stableItems.reduce((m, e) => (e.side === "bottom" ? Math.max(m, e.stack) : m), -1);
-    const needed = (Math.max(maxTop, maxBottom) + 1) * LANE_HEIGHT * 2 + TRACK_PADDING * 2;
-    return Math.max(260, needed);
+    // 卡片需要足够纵向空间：stack 层高 + 卡片高度(~150px) + 边距
+    const cardClearance = 160;
+    const needed = (Math.max(maxTop, maxBottom) + 1) * LANE_HEIGHT * 2 + cardClearance * 2 + TRACK_PADDING * 2;
+    return Math.max(480, needed);
   }, [stableItems]);
 
   // 按周聚合计数：单次遍历 O(n)，以周一为周起始对齐
@@ -465,7 +490,13 @@ export function DayTimeline({ events, todos = [], linkedTodoTitles = {}, onEvent
       .sort((a, b) => a.start.getTime() - b.start.getTime());
   }, [allItems]);
 
-  const axisDensity = scale > 1.2 ? 1 : scale > 0.5 ? 2 : 4;
+  // 根据可见天数和视口宽度动态计算刻度密度，避免缩小时标签过密
+  const axisDensity = useMemo(() => {
+    if (containerWidth <= 0) return 4;
+    const visibleHours = visibleDays * 24;
+    const targetLabelCount = Math.max(4, Math.floor(containerWidth / 72));
+    return Math.max(1, Math.ceil(visibleHours / targetLabelCount));
+  }, [visibleDays, containerWidth]);
 
   const hourMarks = useMemo(() => {
     const totalHours = Math.floor(totalRangeMs / 3600000) + 1;

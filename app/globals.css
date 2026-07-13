@@ -398,7 +398,7 @@ button {
 
 .line-timeline-hscroll {
   overflow-x: auto;
-  overflow-y: hidden;
+  overflow-y: clip;
   overscroll-behavior: contain;
   padding-top: 32px;
   padding-bottom: 24px;
@@ -790,7 +790,7 @@ button {
   transform: translateX(var(--card-offset-x, 0px));
   width: max(72px, var(--card-width, 180px));
   max-width: 320px;
-  max-height: 130px;
+  max-height: 160px;
   overflow: hidden;
   padding: 6px 10px;
   border-radius: 14px;
