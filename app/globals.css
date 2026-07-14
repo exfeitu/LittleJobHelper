@@ -699,6 +699,11 @@ button {
   z-index: 4;
 }
 
+.line-event:has(.line-event-card:hover),
+.line-event:has(.line-event-card:focus-visible) {
+  z-index: 50;
+}
+
 .line-event-top {
   /* 卡片在上方 */;
 }
@@ -787,10 +792,12 @@ button {
 .line-event-card {
   position: absolute;
   left: 0;
+  display: flex;
+  flex-direction: column;
   transform: translateX(var(--card-offset-x, 0px));
   width: max(72px, var(--card-width, 180px));
   max-width: 320px;
-  max-height: 160px;
+  height: 140px;
   overflow: hidden;
   padding: 6px 10px;
   border-radius: 14px;
@@ -807,16 +814,10 @@ button {
 .line-event-card:focus-visible {
   outline: none;
   z-index: 50;
-  transform: translateX(var(--card-offset-x, 0px)) scale(1.03);
+  transform: translateX(var(--card-offset-x, 0px));
+  width: 420px;
   max-width: 420px;
-  max-height: none;
-  overflow: visible;
   box-shadow: 0 16px 36px rgba(110, 156, 118, 0.28);
-}
-
-.line-event-card:hover p {
-  -webkit-line-clamp: unset;
-  overflow: visible;
 }
 
 .line-event-top .line-event-card {
@@ -828,9 +829,16 @@ button {
 }
 
 .line-event-time {
+  order: 99;
+  visibility: hidden;
   margin-bottom: 2px;
   color: #28533a;
   font-size: 0.78rem;
+}
+
+.line-event-card:hover .line-event-time,
+.line-event-card:focus-visible .line-event-time {
+  visibility: visible;
 }
 
 .line-event-card h4 {
