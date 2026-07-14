@@ -22,6 +22,38 @@ html {
   scrollbar-gutter: auto;
 }
 
+/* ── Overlay scrollbar (only visible on hover/scroll) ── */
+/* WebKit (Chrome / Edge / Safari) */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 3px;
+}
+
+body:hover ::-webkit-scrollbar-thumb,
+body:active ::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.18);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.35);
+}
+
+/* Firefox */
+@-moz-document url-prefix() {
+  html {
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+  }
+}
+
 body {
   margin: 0;
   min-height: 100vh;

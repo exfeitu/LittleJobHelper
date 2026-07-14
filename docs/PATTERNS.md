@@ -10,7 +10,7 @@
 2. `CURRENT_DATA_VERSION` 加 1，在 `migrations` 末尾追加迁移函数
 3. 在用到该类型的组件中处理新字段的展示和编辑
 4. **容易遗漏**：`lib/utils.ts` 的 `exportRows()` 函数需要在导出映射中加上新字段
-5. **容易遗漏**：`lib/storage.ts` 的 `buildCsv()` 函数需要在 CSV 表头和数据行中加上新字段
+5. **容易遗漏**：`components/export-panel.tsx` 的 `buildCsv()` 函数需要在 CSV 表头和数据行中加上新字段
 6. **容易遗漏**：组件代码需要对旧数据中 `undefined` 的新字段做空值兜底
 
 ---

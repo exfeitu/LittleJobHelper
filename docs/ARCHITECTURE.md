@@ -18,6 +18,7 @@ components/
   task-form-panel.tsx       # 任务编辑弹窗
   settings-panel.tsx        # 云同步设置
   export-panel.tsx          # 导出 JSON/CSV
+  tag-manager-panel.tsx     # 自定义标签管理面板
   help-icon.tsx             # 可复用 ⓘ 帮助图标
 hooks/
   use-app-data.ts           # 共享 hook：数据加载、持久化、云同步
