@@ -22,7 +22,7 @@ html {
   scrollbar-gutter: auto;
 }
 
-/* ── Overlay scrollbar (only visible on hover/scroll) ── */
+/* ── Overlay scrollbar (subtle, more visible on hover) ── */
 /* WebKit (Chrome / Edge / Safari) */
 ::-webkit-scrollbar {
   width: 6px;
@@ -33,24 +33,19 @@ html {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: transparent;
+  background: rgba(0, 0, 0, 0.12);
   border-radius: 3px;
 }
 
-body:hover ::-webkit-scrollbar-thumb,
-body:active ::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.18);
-}
-
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(0, 0, 0, 0.35);
+  background: rgba(0, 0, 0, 0.32);
 }
 
 /* Firefox */
 @-moz-document url-prefix() {
   html {
     scrollbar-width: thin;
-    scrollbar-color: transparent transparent;
+    scrollbar-color: rgba(0, 0, 0, 0.12) transparent;
   }
 }
 
@@ -847,8 +842,8 @@ button {
   outline: none;
   z-index: 50;
   transform: translateX(var(--card-offset-x, 0px));
-  width: 420px;
-  max-width: 420px;
+  width: 336px;
+  max-width: 336px;
   box-shadow: 0 16px 36px rgba(110, 156, 118, 0.28);
 }
 
