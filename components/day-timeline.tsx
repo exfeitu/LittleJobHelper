@@ -2,6 +2,28 @@
 
 import { type CSSProperties, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { EventItem, TodoItem } from "@/types";
+import {
+  BASE_VISIBLE_DAYS,
+  CARD_HORIZONTAL_GAP,
+  FULL_CARD_MAX_WIDTH,
+  FULL_CARD_MIN_WIDTH,
+  LANE_HEIGHT,
+  MAX_SCALE,
+  MIN_SCALE,
+  PRIORITY_LABEL,
+  SCALE_STEP,
+  STATUS_LABEL,
+  TRACK_PADDING,
+  TimelineItem,
+  assignLanes,
+  buildWeekBrackets,
+  endOfDay,
+  eventToTimeline,
+  formatClock,
+  formatDayLabel,
+  startOfDay,
+  todoToTimeline,
+} from "@/lib/timeline-layout";
 
 type DayTimelineProps = {
   events: EventItem[];
@@ -16,21 +38,6 @@ type DayTimelineProps = {
   scrollToDate?: string;
 };
 
-/** 统一的时间轴条目 */
-type TimelineItem = {
-  kind: "event" | "todo";
-  id: string;
-  startTime: string;
-  endTime: string;
-  title: string;
-  detail?: string;
-  tags: string[];
-  // event-specific
-  eventData?: EventItem;
-  // todo-specific
-  todoData?: TodoItem;
-};
-
 type PositionedItem = TimelineItem & {
   color: string;
   stack: number;
@@ -40,115 +47,6 @@ type PositionedItem = TimelineItem & {
   cardOffsetXPx: number;
   cardWidthPx: number;
 };
-
-const MIN_SCALE = 0.03;
-const MAX_SCALE = 24;
-const SCALE_STEP = 0.05;
-const BASE_VISIBLE_DAYS = 1;
-const EVENT_COLORS = ["#5fa86e", "#8c6fd1", "#4f9d9d", "#c96f91", "#7ea95b", "#5b8fc9"];
-const TODO_COLORS = ["#e8964a", "#d97050", "#c98a4f", "#e0a040", "#d97842", "#e8883a"];
-const FULL_CARD_MIN_WIDTH = 60;
-const FULL_CARD_MAX_WIDTH = 320;
-const CARD_HORIZONTAL_GAP = 6;
-const LANE_HEIGHT = 108; // 行高（纵向拉宽 50%）
-const TRACK_PADDING = 32;
-const TODO_MIN_DURATION_MS = 30 * 60 * 1000; // 待办最低 30 分钟宽
-
-const PRIORITY_LABEL: Record<string, string> = { high: "高", medium: "中", low: "低" };
-const STATUS_LABEL: Record<string, string> = {
-  pending: "未开始",
-  in_progress: "进行中",
-  completed: "已完成",
-  cancelled: "已取消",
-};
-
-function startOfDay(value: string) {
-  const date = new Date(value);
-  date.setHours(0, 0, 0, 0);
-  return date;
-}
-
-function endOfDay(value: string) {
-  const date = startOfDay(value);
-  date.setDate(date.getDate() + 1);
-  return date;
-}
-
-function formatClock(value: string) {
-  return new Intl.DateTimeFormat("zh-CN", {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).format(new Date(value));
-}
-
-function formatDayLabel(value: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "--";
-  return new Intl.DateTimeFormat("zh-CN", {
-    month: "2-digit",
-    day: "2-digit",
-    weekday: "short",
-  }).format(date);
-}
-
-/** 将 EventItem 转为 TimelineItem */
-function eventToTimeline(event: EventItem): TimelineItem {
-  return {
-    kind: "event",
-    id: event.id,
-    startTime: event.startTime,
-    endTime: event.endTime,
-    title: event.title,
-    detail: event.detail,
-    tags: event.tags,
-    eventData: event,
-  };
-}
-
-/** 将 TodoItem 转为 TimelineItem（锚定 dueDate 或 startTime） */
-function todoToTimeline(todo: TodoItem): TimelineItem {
-  const anchor = todo.startTime || todo.dueDate;
-  if (!anchor) {
-    // 没有时间的待办：放到当天中午
-    const today = new Date();
-    today.setHours(12, 0, 0, 0);
-    const pad2 = (n: number) => String(n).padStart(2, "0");
-    const d = `${today.getFullYear()}-${pad2(today.getMonth() + 1)}-${pad2(today.getDate())}`;
-    const noon = `${d}T12:00:00`;
-    const end = new Date(new Date(noon).getTime() + TODO_MIN_DURATION_MS);
-    const endStr = `${d}T${pad2(end.getHours())}:${pad2(end.getMinutes())}:00`;
-    return {
-      kind: "todo",
-      id: todo.id,
-      startTime: noon,
-      endTime: endStr,
-      title: todo.title,
-      detail: todo.remarks,
-      tags: todo.tags,
-      todoData: todo,
-    };
-  }
-
-  const startMs = new Date(anchor).getTime();
-  const endMs = startMs + TODO_MIN_DURATION_MS;
-  const endDate = new Date(endMs);
-  const pad2 = (n: number) => String(n).padStart(2, "0");
-  const d = (s: string) => s.slice(0, 10);
-  const anchorStr = anchor.slice(0, 19);
-  const endStr = `${d(anchor)}T${pad2(endDate.getHours())}:${pad2(endDate.getMinutes())}:00`;
-
-  return {
-    kind: "todo",
-    id: todo.id,
-    startTime: anchorStr,
-    endTime: endStr,
-    title: todo.title,
-    detail: todo.remarks,
-    tags: todo.tags,
-    todoData: todo,
-  };
-}
 
 export function DayTimeline({ events, todos = [], linkedTodoTitles = {}, onEventClick, onTodoClick, scale: externalScale, onScaleChange, scrollToTodayTrigger, scrollToDate }: DayTimelineProps) {
   const [internalScale, setInternalScale] = useState(1);
@@ -351,70 +249,11 @@ export function DayTimeline({ events, todos = [], linkedTodoTitles = {}, onEvent
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scrollToDate]);
 
-  // 不依赖 scale/shellWidth 的稳定计算（date解析、lane分配、颜色）
-  const stableItems = useMemo(() => {
-    if (!timelineDays.length) return [];
-    // 分离 top/bottom 两个 lane 池，强制上下交错
-    const topLaneEnds: number[] = [];
-    const bottomLaneEnds: number[] = [];
-    let lastSide: "top" | "bottom" = "bottom"; // 首个条目优先放上方
-
-    let eventColorIdx = 0;
-    let todoColorIdx = 0;
-
-    return allItems.map((item) => {
-      const startMs = new Date(item.startTime).getTime();
-      const endMs = new Date(item.endTime).getTime();
-      const startMinute = (startMs - timeOrigin) / 60000;
-      const endMinute = (endMs - timeOrigin) / 60000;
-
-      // 优先选与上一个条目相反的一侧
-      const prefSide: "top" | "bottom" = lastSide === "top" ? "bottom" : "top";
-      const altSide: "top" | "bottom" = prefSide === "top" ? "bottom" : "top";
-
-      const prefLanes = prefSide === "top" ? topLaneEnds : bottomLaneEnds;
-      const altLanes = altSide === "top" ? topLaneEnds : bottomLaneEnds;
-
-      let side: "top" | "bottom";
-      let stack: number;
-
-      // 1) 优先选反侧的空闲 lane
-      const prefIdx = prefLanes.findIndex((v) => v <= startMinute);
-      if (prefIdx !== -1) {
-        side = prefSide;
-        stack = prefIdx;
-        prefLanes[prefIdx] = endMinute;
-      } else {
-        // 2) 反侧无空闲，尝试同侧
-        const altIdx = altLanes.findIndex((v) => v <= startMinute);
-        if (altIdx !== -1) {
-          side = altSide;
-          stack = altIdx;
-          altLanes[altIdx] = endMinute;
-        } else {
-          // 3) 两侧都满了，在反侧新开一层
-          side = prefSide;
-          stack = prefLanes.length;
-          prefLanes.push(endMinute);
-        }
-      }
-
-      lastSide = side;
-
-      const leftPercent = totalRangeMs > 0 ? ((startMs - timeOrigin) / totalRangeMs) * 100 : 0;
-      const widthPercent = totalRangeMs > 0 ? (Math.max(60000, endMs - startMs) / totalRangeMs) * 100 : 0;
-
-      const colors = item.kind === "todo" ? TODO_COLORS : EVENT_COLORS;
-      const colorIndex = item.kind === "todo" ? todoColorIdx++ : eventColorIdx++;
-
-      return {
-        ...item,
-        stack, side,
-        color: colors[Math.max(0, colorIndex) % colors.length],
-        leftPercent, widthPercent,
-      };
-    });
-  }, [allItems, timelineDays, timeOrigin, totalRangeMs]);
+  // 不依赖 scale/shellWidth 的稳定计算（lane 分配、颜色、百分比位置）
+  const stableItems = useMemo(
+    () => assignLanes(allItems, timeOrigin, totalRangeMs),
+    [allItems, timeOrigin, totalRangeMs],
+  );
 
   // 仅依赖 shellWidth 的像素计算（缩放时重算，稳定部分不变）
   const positionedItems = useMemo<PositionedItem[]>(() => {
@@ -459,36 +298,8 @@ export function DayTimeline({ events, todos = [], linkedTodoTitles = {}, onEvent
     return Math.max(480, needed);
   }, [stableItems]);
 
-  // 按周聚合计数：单次遍历 O(n)，以周一为周起始对齐
-  const weekBrackets = useMemo(() => {
-    if (!allItems.length) return [];
-    const weekMap = new Map<number, { start: Date; end: Date; eventCount: number; todoCount: number }>();
-
-    for (const item of allItems) {
-      const d = new Date(item.startTime);
-      const dayOfWeek = d.getDay();
-      // 周日(0)→上周一，周一(1)→当天，周二(2)→昨天... 周六(6)→上周五
-      const diffToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-      const monday = new Date(d);
-      monday.setDate(d.getDate() + diffToMonday);
-      monday.setHours(0, 0, 0, 0);
-      const weekKey = monday.getTime();
-
-      if (!weekMap.has(weekKey)) {
-        const sunday = new Date(monday);
-        sunday.setDate(sunday.getDate() + 6);
-        weekMap.set(weekKey, { start: monday, end: sunday, eventCount: 0, todoCount: 0 });
-      }
-
-      const entry = weekMap.get(weekKey)!;
-      if (item.kind === "event") entry.eventCount++;
-      else entry.todoCount++;
-    }
-
-    return Array.from(weekMap.values())
-      .filter((w) => w.eventCount > 0 || w.todoCount > 0)
-      .sort((a, b) => a.start.getTime() - b.start.getTime());
-  }, [allItems]);
+  // 按周聚合计数（以周一为周起始对齐）
+  const weekBrackets = useMemo(() => buildWeekBrackets(allItems), [allItems]);
 
   // 根据可见天数和视口宽度动态计算刻度密度，避免缩小时标签过密
   const axisDensity = useMemo(() => {

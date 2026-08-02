@@ -1,0 +1,298 @@
+import { EventItem, TodoItem } from "@/types";
+import { CURRENT_DATA_VERSION, DataBundle, migrateData, parseVersion } from "@/lib/storage-migrate";
+
+const STORAGE_KEY_EVENTS = "little-job-helper-events";
+const STORAGE_KEY_TODOS = "little-job-helper-todos";
+const STORAGE_KEY_VERSION = "little-job-helper-version";
+const STORAGE_KEY_CUSTOM_TAGS = "little-job-helper-custom-tags";
+
+// ============================================================
+// LocalStorage 读写（含版本号管理）
+// ============================================================
+
+/**
+ * 读取 LocalStorage 中的数据版本号，无记录时返回 0（legacy）。
+ */
+function getStoredVersion(): number {
+  if (typeof window === "undefined") return CURRENT_DATA_VERSION;
+
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_VERSION);
+    if (raw === null) {
+      // 有数据但无版本号 → legacy 数据
+      const hasData =
+        localStorage.getItem(STORAGE_KEY_EVENTS) !== null ||
+        localStorage.getItem(STORAGE_KEY_TODOS) !== null;
+      return hasData ? 0 : CURRENT_DATA_VERSION;
+    }
+    return parseInt(raw, 10) || 0;
+  } catch {
+    return 0;
+  }
+}
+
+function setStoredVersion(version: number): void {
+  if (typeof window === "undefined") return;
+
+  try {
+    localStorage.setItem(STORAGE_KEY_VERSION, String(version));
+  } catch (error) {
+    console.error("Failed to save version:", error);
+  }
+}
+
+export function loadEventsFromStorage(): EventItem[] | null {
+  if (typeof window === "undefined") return null;
+
+  try {
+    const data = localStorage.getItem(STORAGE_KEY_EVENTS);
+    return data ? JSON.parse(data) : null;
+  } catch (error) {
+    console.error("Failed to load events from storage:", error);
+    return null;
+  }
+}
+
+export function loadTodosFromStorage(): TodoItem[] | null {
+  if (typeof window === "undefined") return null;
+
+  try {
+    const data = localStorage.getItem(STORAGE_KEY_TODOS);
+    return data ? JSON.parse(data) : null;
+  } catch (error) {
+    console.error("Failed to load todos from storage:", error);
+    return null;
+  }
+}
+
+/**
+ * 从 LocalStorage 加载数据，如果数据版本过旧则自动迁移。
+ * 迁移后的数据会立即写回 LocalStorage。
+ */
+export function loadAndMigrateFromStorage(): {
+  events: EventItem[];
+  todos: TodoItem[];
+  migrated: boolean;
+} {
+  const events = loadEventsFromStorage();
+  const todos = loadTodosFromStorage();
+  const storedVersion = getStoredVersion();
+
+  if (!events || !todos) {
+    return { events: events ?? [], todos: todos ?? [], migrated: false };
+  }
+
+  if (storedVersion < CURRENT_DATA_VERSION) {
+    const migrated = migrateData({ events, todos }, storedVersion);
+    // 写回迁移后的数据
+    saveEventsToStorage(migrated.events);
+    saveTodosToStorage(migrated.todos);
+    setStoredVersion(CURRENT_DATA_VERSION);
+    return { ...migrated, migrated: true };
+  }
+
+  return { events, todos, migrated: false };
+}
+
+export function saveEventsToStorage(events: EventItem[]): void {
+  if (typeof window === "undefined") return;
+
+  try {
+    localStorage.setItem(STORAGE_KEY_EVENTS, JSON.stringify(events));
+    setStoredVersion(CURRENT_DATA_VERSION);
+  } catch (error) {
+    console.error("Failed to save events to storage:", error);
+  }
+}
+
+export function saveTodosToStorage(todos: TodoItem[]): void {
+  if (typeof window === "undefined") return;
+
+  try {
+    localStorage.setItem(STORAGE_KEY_TODOS, JSON.stringify(todos));
+    setStoredVersion(CURRENT_DATA_VERSION);
+  } catch (error) {
+    console.error("Failed to save todos to storage:", error);
+  }
+}
+
+/**
+ * 读取用户自定义标签列表
+ */
+export function loadCustomTags(): string[] {
+  if (typeof window === "undefined") return [];
+
+  try {
+    const data = localStorage.getItem(STORAGE_KEY_CUSTOM_TAGS);
+    return data ? (JSON.parse(data) as string[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * 保存用户自定义标签列表（去重）
+ */
+export function saveCustomTags(tags: string[]): void {
+  if (typeof window === "undefined") return;
+
+  try {
+    const unique = Array.from(new Set(tags.filter(Boolean)));
+    localStorage.setItem(STORAGE_KEY_CUSTOM_TAGS, JSON.stringify(unique));
+  } catch (error) {
+    console.error("Failed to save custom tags:", error);
+  }
+}
+
+/**
+ * 追加一个新的自定义标签
+ */
+export function addCustomTag(tag: string): string[] {
+  const current = loadCustomTags();
+  if (!tag.trim() || current.includes(tag.trim())) return current;
+  const next = [...current, tag.trim()];
+  saveCustomTags(next);
+  return next;
+}
+
+/**
+ * 删除一个自定义标签
+ */
+export function removeCustomTag(tag: string): string[] {
+  const current = loadCustomTags();
+  const next = current.filter((t) => t !== tag);
+  saveCustomTags(next);
+  return next;
+}
+
+/**
+ * 批量设置自定义标签（替换全部）
+ */
+export function setCustomTags(tags: string[]): string[] {
+  const unique = Array.from(new Set(tags.filter(Boolean)));
+  saveCustomTags(unique);
+  return unique;
+}
+
+export function clearAllStorage(): void {
+  if (typeof window === "undefined") return;
+
+  localStorage.removeItem(STORAGE_KEY_EVENTS);
+  localStorage.removeItem(STORAGE_KEY_TODOS);
+  localStorage.removeItem(STORAGE_KEY_VERSION);
+  localStorage.removeItem(STORAGE_KEY_CUSTOM_TAGS);
+}
+
+// ============================================================
+// JSON 文件导入/导出（含版本号 + 迁移 + 结构校验）
+// ============================================================
+
+/**
+ * 导出数据为 JSON 文件（触发浏览器下载），包含自定义标签，与云端同步格式保持一致。
+ */
+export function exportDataAsFile(
+  events: EventItem[],
+  todos: TodoItem[],
+  customTags: string[] = [],
+): void {
+  const data = {
+    version: CURRENT_DATA_VERSION,
+    exportedAt: new Date().toISOString(),
+    events,
+    todos,
+    customTags,
+  };
+
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `little-job-helper-backup-${new Date().toISOString().slice(0, 10)}.json`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
+/**
+ * 校验单条事件的基本结构。返回错误信息，合法返回 null。
+ */
+function validateEvent(event: unknown): string | null {
+  if (!event || typeof event !== "object") return "事件必须是对象";
+  const e = event as Record<string, unknown>;
+  if (typeof e.id !== "string" || !e.id) return "事件缺少 id";
+  if (typeof e.startTime !== "string" || !e.startTime) return "事件缺少 startTime";
+  if (typeof e.title !== "string" || !e.title) return "事件缺少 title";
+  return null;
+}
+
+/**
+ * 校验单条待办的基本结构。返回错误信息，合法返回 null。
+ */
+function validateTodo(todo: unknown): string | null {
+  if (!todo || typeof todo !== "object") return "待办必须是对象";
+  const t = todo as Record<string, unknown>;
+  if (typeof t.id !== "string" || !t.id) return "待办缺少 id";
+  if (typeof t.title !== "string" || !t.title) return "待办缺少 title";
+  return null;
+}
+
+/**
+ * 从 JSON 文件导入数据（自动迁移旧版本 + 基础结构校验）
+ */
+export function importDataFromFile(file: File): Promise<{
+  events: EventItem[];
+  todos: TodoItem[];
+  customTags: string[];
+  migrated: boolean;
+}> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.onload = (event) => {
+      try {
+        const content = event.target?.result as string;
+        const data = JSON.parse(content);
+
+        if (!data.events || !data.todos) {
+          throw new Error("数据格式无效：缺少 events 或 todos 字段");
+        }
+
+        // 基础结构校验
+        for (const evt of data.events as unknown[]) {
+          const err = validateEvent(evt);
+          if (err) throw new Error(`数据格式无效：${err}`);
+        }
+        for (const todo of data.todos as unknown[]) {
+          const err = validateTodo(todo);
+          if (err) throw new Error(`数据格式无效：${err}`);
+        }
+
+        const fileVersion = parseVersion(data.version);
+        const customTags: string[] = Array.isArray(data.customTags)
+          ? Array.from(new Set((data.customTags as string[]).filter((t) => typeof t === "string")))
+          : [];
+
+        if (fileVersion < CURRENT_DATA_VERSION) {
+          const migrated = migrateData(
+            { events: data.events as EventItem[], todos: data.todos as TodoItem[] },
+            fileVersion,
+          );
+          resolve({ ...migrated, customTags, migrated: true });
+        } else {
+          resolve({
+            events: data.events as EventItem[],
+            todos: data.todos as TodoItem[],
+            customTags,
+            migrated: false,
+          });
+        }
+      } catch (error) {
+        reject(error);
+      }
+    };
+
+    reader.onerror = () => reject(new Error("读取文件失败"));
+    reader.readAsText(file);
+  });
+}

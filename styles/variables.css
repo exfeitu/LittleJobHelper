@@ -1,0 +1,61 @@
+:root {
+  --bg: #eff8f0;
+  --bg-soft: #deefe0;
+  --panel: rgba(255, 255, 255, 0.84);
+  --panel-strong: rgba(237, 247, 239, 0.94);
+  --line: rgba(108, 156, 120, 0.18);
+  --text: #183626;
+  --muted: #627e6b;
+  --accent: #4f8f63;
+  --accent-cool: #78b28c;
+  --danger: #d96d82;
+  --success: #5aab72;
+  --shadow: 0 24px 80px rgba(110, 156, 118, 0.16);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+  scrollbar-gutter: auto;
+}
+
+/* ── Overlay scrollbar (subtle, more visible on hover) ── */
+/* WebKit (Chrome / Edge / Safari) */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.12);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.32);
+}
+
+/* Firefox */
+@-moz-document url-prefix() {
+  html {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(0, 0, 0, 0.12) transparent;
+  }
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  color: var(--text);
+  background:
+    radial-gradient(circle at top left, rgba(127, 183, 138, 0.24), transparent 24%),
+    radial-gradient(circle at right 20%, rgba(79, 143, 99, 0.12), transparent 22%),
+    linear-gradient(180deg, #f7fcf7 0%, #e8f4e9 100%);
+  font-family: "Noto Serif SC", "Source Han Serif SC", serif;
+}

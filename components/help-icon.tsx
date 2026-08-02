@@ -46,6 +46,9 @@ export function HelpIcon({ tips }: HelpIconProps) {
         type="button"
         onClick={openPopover}
         title="使用帮助"
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        aria-label="使用帮助"
       >
         ⓘ
       </button>
@@ -57,6 +60,8 @@ export function HelpIcon({ tips }: HelpIconProps) {
             top: pos.top,
             left: pos.left,
           }}
+          role="dialog"
+          aria-label="使用帮助"
         >
           {tips.map((tip, i) => (
             <p key={i}>{tip}</p>

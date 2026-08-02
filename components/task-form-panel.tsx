@@ -1,7 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { Priority, TodoItem, TodoStatus } from "@/types";
+import { useMemo, useRef, useState } from "react";
+import { Priority, TodoItem, TodoStatus, TodoStep } from "@/types";
+import { BASE_TAGS } from "@/lib/constants";
+import { genId } from "@/lib/utils";
+import { useFocusTrap } from "@/hooks/use-focus-trap";
 
 type TaskFormPanelProps = {
   editTodo?: TodoItem;
@@ -12,10 +15,10 @@ type TaskFormPanelProps = {
   onClose: () => void;
 };
 
-const BASE_TAGS = ["党建", "人事", "纪检", "编制", "档案", "外出", "会议", "其他"];
-
 export function TaskFormPanel({ editTodo, customTags = [], onTagCreated, onSave, onDelete, onClose }: TaskFormPanelProps) {
   const isEdit = !!editTodo;
+  const panelRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(panelRef, true);
   const allTags = useMemo(
     () => Array.from(new Set([...BASE_TAGS, ...customTags])),
     [customTags],
@@ -30,7 +33,32 @@ export function TaskFormPanel({ editTodo, customTags = [], onTagCreated, onSave,
   const [remarks, setRemarks] = useState(editTodo?.remarks ?? "");
   const [selectedTags, setSelectedTags] = useState<string[]>(editTodo?.tags ?? []);
   const [customTagInput, setCustomTagInput] = useState("");
+  const [steps, setSteps] = useState<TodoStep[]>(editTodo?.steps ?? []);
+  const [newStepText, setNewStepText] = useState("");
   const [validationError, setValidationError] = useState<string | null>(null);
+
+  const addStep = () => {
+    const text = newStepText.trim();
+    if (!text) return;
+    setSteps((prev) => [...prev, { id: genId("step"), content: text, completed: false }]);
+    setNewStepText("");
+  };
+
+  const toggleStep = (id: string) => {
+    setSteps((prev) =>
+      prev.map((s) => (s.id === id ? { ...s, completed: !s.completed } : s)),
+    );
+  };
+
+  const removeStep = (id: string) => {
+    setSteps((prev) => prev.filter((s) => s.id !== id));
+  };
+
+  const updateStepScheduledTime = (id: string, value: string) => {
+    setSteps((prev) =>
+      prev.map((s) => (s.id === id ? { ...s, scheduledTime: value || undefined } : s)),
+    );
+  };
 
   const toggleTag = (tag: string) => {
     setSelectedTags((prev) =>
@@ -62,7 +90,7 @@ export function TaskFormPanel({ editTodo, customTags = [], onTagCreated, onSave,
     }
 
     const todo: TodoItem = {
-      id: editTodo?.id ?? `todo-${Date.now()}`,
+      id: editTodo?.id ?? genId("todo"),
       title: title.trim(),
       dueDate: dueDate || undefined,
       priority,
@@ -72,9 +100,11 @@ export function TaskFormPanel({ editTodo, customTags = [], onTagCreated, onSave,
       contactPerson: contactPerson.trim() || undefined,
       remarks: remarks.trim() || undefined,
       parentId: editTodo?.parentId ?? null,
-      pinnedToToday: status !== "completed" && status !== "cancelled",
+      // 编辑时保留用户原置顶选择；新建任务默认按状态决定
+      pinnedToToday:
+        editTodo?.pinnedToToday ?? (status !== "completed" && status !== "cancelled"),
       linkedEventIds: editTodo?.linkedEventIds,
-      steps: editTodo?.steps,
+      steps: steps.length > 0 ? steps : undefined,
       updatedAt: new Date().toISOString(),
     };
 
@@ -86,8 +116,14 @@ export function TaskFormPanel({ editTodo, customTags = [], onTagCreated, onSave,
   };
 
   return (
-    <div className="modal-overlay" onClick={handleOverlayClick}>
-      <div className="modal-panel task-form-panel">
+    <div
+      className="modal-overlay"
+      onClick={handleOverlayClick}
+      role="dialog"
+      aria-modal="true"
+      aria-label={isEdit ? "编辑任务" : "新建任务"}
+    >
+      <div className="modal-panel task-form-panel" ref={panelRef}>
         <div className="modal-header">
           <h2>{isEdit ? "✏️ 编辑任务" : "➕ 新建任务"}</h2>
           <button className="modal-close-button" type="button" onClick={onClose} aria-label="关闭">
@@ -208,6 +244,68 @@ export function TaskFormPanel({ editTodo, customTags = [], onTagCreated, onSave,
                 添加
               </button>
             )}
+          </div>
+        </div>
+
+        {/* 子任务步骤 */}
+        <div className="record-section">
+          <label className="record-label">任务步骤（可选）</label>
+          <div className="todo-steps-editor">
+            {steps.length > 0 && (
+              <div className="todo-steps-list">
+                {steps.map((step) => (
+                  <div key={step.id} className="todo-step-row">
+                    <button
+                      type="button"
+                      className={`chip-button chip-time ${step.completed ? "todo-step-done" : ""}`}
+                      onClick={() => toggleStep(step.id)}
+                      title={step.completed ? "标记为未完成" : "标记为完成"}
+                    >
+                      {step.completed ? "✓" : "○"}
+                    </button>
+                    <span
+                      className={`todo-step-content ${step.completed ? "todo-step-done-text" : ""}`}
+                    >
+                      {step.content}
+                    </span>
+                    <input
+                      type="datetime-local"
+                      className="todo-step-time"
+                      value={step.scheduledTime?.slice(0, 16) ?? ""}
+                      onChange={(e) => updateStepScheduledTime(step.id, e.target.value)}
+                      aria-label={`${step.content} 的提醒时间`}
+                    />
+                    <button
+                      type="button"
+                      className="chip-remove"
+                      onClick={() => removeStep(step.id)}
+                      title="删除该步骤"
+                      aria-label={`删除步骤 ${step.content}`}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="record-custom-tag" style={{ marginBottom: 0 }}>
+              <input
+                value={newStepText}
+                onChange={(e) => setNewStepText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    addStep();
+                  }
+                }}
+                placeholder="输入步骤内容，回车添加"
+              />
+              {newStepText.trim() && (
+                <button type="button" className="ghost-button" onClick={addStep}>
+                  添加
+                </button>
+              )}
+            </div>
           </div>
         </div>
 

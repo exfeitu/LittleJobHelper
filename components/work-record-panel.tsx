@@ -1,7 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { EventItem, TodoItem } from "@/types";
+import { BASE_TAGS } from "@/lib/constants";
+import { genId } from "@/lib/utils";
+import { useFocusTrap } from "@/hooks/use-focus-trap";
 
 type WorkRecordPanelProps = {
   events: EventItem[];
@@ -15,8 +18,6 @@ type WorkRecordPanelProps = {
   onDelete?: (id: string) => void;
   onClose: () => void;
 };
-
-const BASE_TAGS = ["党建", "人事", "纪检", "编制", "档案", "外出", "会议", "其他"];
 
 function toDatetimeLocal(date: Date): string {
   const year = date.getFullYear();
@@ -54,6 +55,8 @@ function getDefaultEndTime(): string {
 
 export function WorkRecordPanel({ events, todos, linkedTodoTitles, editEvent, customTags = [], onTagCreated, onTagDeleted, onSave, onDelete, onClose }: WorkRecordPanelProps) {
   const isEdit = !!editEvent;
+  const panelRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(panelRef, true);
   const allTags = useMemo(
     () => Array.from(new Set([...BASE_TAGS, ...customTags])),
     [customTags],
@@ -160,7 +163,7 @@ export function WorkRecordPanel({ events, todos, linkedTodoTitles, editEvent, cu
     }
 
     const event: EventItem = {
-      id: editEvent?.id ?? `event-${Date.now()}`,
+      id: editEvent?.id ?? genId("event"),
       startTime: formatTime(startDate),
       endTime: formatTime(endDate),
       title: title.trim(),
@@ -180,8 +183,14 @@ export function WorkRecordPanel({ events, todos, linkedTodoTitles, editEvent, cu
   };
 
   return (
-    <div className="modal-overlay" onClick={handleOverlayClick}>
-      <div className="modal-panel work-record-panel">
+    <div
+      className="modal-overlay"
+      onClick={handleOverlayClick}
+      role="dialog"
+      aria-modal="true"
+      aria-label={isEdit ? "编辑工作记录" : "快速记录工作"}
+    >
+      <div className="modal-panel work-record-panel" ref={panelRef}>
         <div className="modal-header">
           <h2>{isEdit ? "✏️ 编辑工作记录" : "📝 快速记录工作"}</h2>
           <button className="modal-close-button" type="button" onClick={onClose} aria-label="关闭">

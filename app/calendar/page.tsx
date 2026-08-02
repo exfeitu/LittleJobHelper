@@ -1,19 +1,29 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useMemo, useState } from "react";
 import { ExportPanel } from "@/components/export-panel";
 import { HelpIcon } from "@/components/help-icon";
 import { SettingsPanel } from "@/components/settings-panel";
 import { TaskFormPanel } from "@/components/task-form-panel";
 import { WorkRecordPanel } from "@/components/work-record-panel";
+import { TagManagerPanel } from "@/components/tag-manager-panel";
+import { AppHeader } from "@/components/app-header";
 import { syncLinkedItems } from "@/lib/utils";
 import { formatDateTime, formatDiaryDate, getTodayFocus } from "@/lib/utils";
+import { BASE_TAGS } from "@/lib/constants";
+import { genId } from "@/lib/utils";
+import { useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts";
 import { EventItem, Priority, TodoItem, TodoStatus } from "@/types";
 import { useAppData } from "@/hooks/use-app-data";
 
 function todayStr(): string {
   const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function shiftDay(dateStr: string, delta: number): string {
+  const d = new Date(`${dateStr}T12:00:00`);
+  d.setDate(d.getDate() + delta);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
@@ -32,8 +42,9 @@ function makeCalendarFormDefault(date: string) {
 
 export default function CalendarPage() {
   const {
-    events, todos, customTags, isInitialized, cloudEnabled,
-    addCustomTag, deleteCustomTag, setData, refreshCloudStatus,
+    events, todos, customTags, isInitialized, cloudEnabled, isOnline,
+    syncStatus, syncError, canUndo, addCustomTag, deleteCustomTag,
+    setCustomTags, setData, undo, refreshCloudStatus,
   } = useAppData();
 
   const today = todayStr();
@@ -43,6 +54,7 @@ export default function CalendarPage() {
   const [showTaskFormPanel, setShowTaskFormPanel] = useState(false);
   const [showSettingsPanel, setShowSettingsPanel] = useState(false);
   const [showExportPanel, setShowExportPanel] = useState(false);
+  const [showTagsPanel, setShowTagsPanel] = useState(false);
   const [editingEvent, setEditingEvent] = useState<EventItem | undefined>(undefined);
   const [editingTodo, setEditingTodo] = useState<TodoItem | undefined>(undefined);
 
@@ -55,8 +67,8 @@ export default function CalendarPage() {
 
     const startTime = `${form.date}T${form.startTime}:00`;
     const endTime = `${form.date}T${form.endTime}:00`;
-    const eventId = `event-${Date.now()}`;
-    const todoId = `todo-${Date.now()}`;
+    const eventId = genId("event");
+    const todoId = genId("todo");
     const tags = form.tags
       .split(/[，,]/)
       .map((tag) => tag.trim())
@@ -146,66 +158,53 @@ export default function CalendarPage() {
     setEditingTodo(undefined);
   }, [events, todos, setData]);
 
+  useKeyboardShortcuts({
+    onNewTask: () => setShowTaskFormPanel(true),
+    onNewRecord: () => setShowWorkRecordPanel(true),
+    onUndo: undo,
+    onEscape: () => {
+      setShowWorkRecordPanel(false);
+      setShowTaskFormPanel(false);
+      setShowSettingsPanel(false);
+      setShowExportPanel(false);
+      setShowTagsPanel(false);
+      setEditingEvent(undefined);
+      setEditingTodo(undefined);
+    },
+  });
+
+  if (!isInitialized) {
+    return (
+      <main className="app-shell">
+        <div className="skeleton-block" style={{ height: 84 }} />
+        <div className="skeleton-block" style={{ height: 420 }} />
+      </main>
+    );
+  }
+
   return (
     <main className="app-shell">
       <section className="workspace-simple">
-        <header className="page-header panel">
-          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-            <h1 style={{ fontSize: "clamp(2.4rem, 3vw, 3.2rem)" }}>办公助手</h1>
-            <HelpIcon tips={[
-              "聚焦时间轴回溯、今日记录、待办跟进与快速检索。",
-              "日历模式按日期汇总当日日程和待办。",
-              "支持添加日程并自动关联待办任务。",
-              "数据自动同步到 GitHub Gist 云端。",
-            ]} />
-          </div>
-          <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-            <nav className="page-nav">
-              <Link href="/" className="page-nav-link">
-                时间轴
-              </Link>
-              <Link href="/calendar" className="page-nav-link active">
-                日历
-              </Link>
-            </nav>
-
-            {/* 快速记录工作 */}
-            <button
-              className="ghost-button"
-              type="button"
-              onClick={() => setShowWorkRecordPanel(true)}
-            >
-              📝 快速记录工作
-            </button>
-
-            {/* 添加任务 */}
-            <button
-              className="ghost-button"
-              type="button"
-              onClick={() => setShowTaskFormPanel(true)}
-            >
-              + 添加任务
-            </button>
-
-            {/* 同步按钮 → 弹出设置面板 */}
-            <button
-              className="ghost-button"
-              type="button"
-              onClick={() => setShowSettingsPanel(true)}
-            >
-              {cloudEnabled ? "☁️" : "⚙️"} 同步
-            </button>
-
-            {/* 导出 Excel 按钮 */}
-            <button
-              className="ghost-button"
-              type="button"
-              onClick={() => setShowExportPanel(true)}
-            >
-              📊 导出Excel
-            </button>
-          </div>
-        </header>
+        <AppHeader
+          activePage="calendar"
+          tips={[
+            "聚焦时间轴回溯、今日记录、待办跟进与快速检索。",
+            "日历模式按日期汇总当日日程和待办。",
+            "支持添加日程并自动关联待办任务。",
+            "快捷键：Ctrl+N 新建任务 · Ctrl+Shift+N 快速记录 · Ctrl+Z 撤销。",
+          ]}
+          cloudEnabled={cloudEnabled}
+          isOnline={isOnline}
+          syncStatus={syncStatus}
+          syncError={syncError}
+          canUndo={canUndo}
+          onQuickRecord={() => setShowWorkRecordPanel(true)}
+          onAddTask={() => setShowTaskFormPanel(true)}
+          onOpenSync={() => setShowSettingsPanel(true)}
+          onOpenExport={() => setShowExportPanel(true)}
+          onOpenTags={() => setShowTagsPanel(true)}
+          onUndo={undo}
+        />
 
         <div className="calendar-layout">
           <section className="panel section-card calendar-main">
@@ -215,16 +214,42 @@ export default function CalendarPage() {
                 <HelpIcon tips={[
                   "左侧\"当日日程\"显示选中日期的时间安排。",
                   "右侧\"当日待办\"显示截止日期为当天的任务。",
-                  "使用右侧日期选择器切换查看日期。",
-                  "点击\"添加日程\"可创建新的日程和关联待办。",
+                  "使用日期选择器或两侧箭头切换日期。",
+                  "点击日程 / 待办卡片可直接编辑或删除。",
                 ]} />
               </div>
-              <input
-                className="calendar-date-picker"
-                type="date"
-                value={selectedDate}
-                onChange={(event) => setSelectedDate(event.target.value)}
-              />
+              <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                <button
+                  className="axis-today-button"
+                  type="button"
+                  onClick={() => setSelectedDate((d) => shiftDay(d, -1))}
+                  title="前一天"
+                >
+                  ◀
+                </button>
+                <button
+                  className="axis-today-button"
+                  type="button"
+                  onClick={() => setSelectedDate(today)}
+                  title="回到今天"
+                >
+                  今天
+                </button>
+                <button
+                  className="axis-today-button"
+                  type="button"
+                  onClick={() => setSelectedDate((d) => shiftDay(d, 1))}
+                  title="后一天"
+                >
+                  ▶
+                </button>
+                <input
+                  className="calendar-date-picker"
+                  type="date"
+                  value={selectedDate}
+                  onChange={(event) => setSelectedDate(event.target.value)}
+                />
+              </div>
             </div>
 
             <div className="calendar-columns">
@@ -233,7 +258,16 @@ export default function CalendarPage() {
                 <div className="calendar-list">
                   {eventsByDate.length ? (
                     eventsByDate.map((event) => (
-                      <article key={event.id} className="calendar-card">
+                      <article
+                        key={event.id}
+                        className="calendar-card calendar-card-clickable"
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => setEditingEvent(event)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setEditingEvent(event); }
+                        }}
+                      >
                         <strong>
                           {event.startTime.slice(11, 16)} - {event.endTime.slice(11, 16)}
                         </strong>
@@ -252,7 +286,16 @@ export default function CalendarPage() {
                 <div className="calendar-list">
                   {todosByDate.length ? (
                     todosByDate.map((todo) => (
-                      <article key={todo.id} className="calendar-card todo-calendar-card">
+                      <article
+                        key={todo.id}
+                        className="calendar-card todo-calendar-card calendar-card-clickable"
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => setEditingTodo(todo)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setEditingTodo(todo); }
+                        }}
+                      >
                         <strong>{formatDateTime(todo.dueDate)}</strong>
                         <h4>{todo.title}</h4>
                         <p>{todo.remarks ?? "无备注"}</p>
@@ -321,7 +364,16 @@ export default function CalendarPage() {
               </div>
               <div className="calendar-list">
                 {pinnedTodos.map((todo) => (
-                  <article key={todo.id} className="calendar-card todo-calendar-card">
+                  <article
+                    key={todo.id}
+                    className="calendar-card todo-calendar-card calendar-card-clickable"
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => setEditingTodo(todo)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setEditingTodo(todo); }
+                    }}
+                  >
                     <strong>{formatDateTime(todo.dueDate)}</strong>
                     <h4>{todo.title}</h4>
                     <p>{todo.remarks ?? "无备注"}</p>
@@ -337,6 +389,7 @@ export default function CalendarPage() {
         <SettingsPanel
           events={events}
           todos={todos}
+          customTags={customTags}
           onDataLoaded={(loadedEvents, loadedTodos) => {
             const synced = syncLinkedItems(loadedEvents, loadedTodos);
             setData(synced);
@@ -353,7 +406,22 @@ export default function CalendarPage() {
         <ExportPanel
           events={events}
           todos={todos}
+          customTags={customTags}
+          onImport={(loadedEvents, loadedTodos, loadedTags) => {
+            const synced = syncLinkedItems(loadedEvents, loadedTodos);
+            setData(synced);
+            if (loadedTags.length) setCustomTags(loadedTags);
+          }}
           onClose={() => setShowExportPanel(false)}
+        />
+      )}
+
+      {showTagsPanel && (
+        <TagManagerPanel
+          baseTags={BASE_TAGS}
+          customTags={customTags}
+          onTagsChange={setCustomTags}
+          onClose={() => setShowTagsPanel(false)}
         />
       )}
 

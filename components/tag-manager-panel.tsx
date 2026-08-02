@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
+import { useFocusTrap } from "@/hooks/use-focus-trap";
 
 type TagManagerPanelProps = {
   baseTags: string[];
@@ -10,6 +11,8 @@ type TagManagerPanelProps = {
 };
 
 export function TagManagerPanel({ baseTags, customTags, onTagsChange, onClose }: TagManagerPanelProps) {
+  const panelRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(panelRef, true);
   const allTags = useMemo(
     () => Array.from(new Set([...baseTags, ...customTags])),
     [baseTags, customTags],
@@ -30,8 +33,14 @@ export function TagManagerPanel({ baseTags, customTags, onTagsChange, onClose }:
   };
 
   return (
-    <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="modal-panel" style={{ maxWidth: "480px" }}>
+    <div
+      className="modal-overlay"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      role="dialog"
+      aria-modal="true"
+      aria-label="管理标签"
+    >
+      <div className="modal-panel" style={{ maxWidth: "480px" }} ref={panelRef}>
         <div className="modal-header">
           <h2>🏷️ 管理标签</h2>
           <button className="modal-close-button" type="button" onClick={onClose} aria-label="关闭">

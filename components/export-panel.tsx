@@ -1,19 +1,22 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
-import { exportDataAsFile } from "@/lib/storage";
+import { exportDataAsFile, importDataFromFile } from "@/lib/storage";
 import { exportRows, toJsonBlock } from "@/lib/utils";
 import type { EventItem, TodoItem } from "@/types";
 
 type Props = {
   events: EventItem[];
   todos: TodoItem[];
+  customTags?: string[];
+  onImport?: (events: EventItem[], todos: TodoItem[], customTags: string[]) => void;
   onClose: () => void;
 };
 
-export function ExportPanel({ events, todos, onClose }: Props) {
+export function ExportPanel({ events, todos, customTags = [], onImport, onClose }: Props) {
   const [format, setFormat] = useState<"json" | "csv">("json");
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [importMessage, setImportMessage] = useState<string | null>(null);
 
   const jsonPreview = useMemo(
     () => toJsonBlock(exportRows(events, todos)),
@@ -22,7 +25,7 @@ export function ExportPanel({ events, todos, onClose }: Props) {
 
   const handleExport = useCallback(() => {
     if (format === "json") {
-      exportDataAsFile(events, todos);
+      exportDataAsFile(events, todos, customTags);
     } else {
       // CSV 导出：用 BOM 保证 Excel 正确识别中文
       const { eventRows, todoRows } = buildCsv(events, todos);
@@ -47,7 +50,28 @@ export function ExportPanel({ events, todos, onClose }: Props) {
       URL.revokeObjectURL(url);
     }
     onClose();
-  }, [events, format, todos, onClose]);
+  }, [events, format, todos, customTags, onClose]);
+
+  const handleImportFile = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      e.target.value = "";
+      if (!file) return;
+      setImportMessage(null);
+      try {
+        const result = await importDataFromFile(file);
+        onImport?.(result.events, result.todos, result.customTags);
+        setImportMessage(
+          `✅ 导入成功：${result.events.length} 条工作记录，${result.todos.length} 个待办任务${result.migrated ? "（已自动迁移）" : ""}`,
+        );
+      } catch (error) {
+        setImportMessage(
+          `❌ 导入失败：${error instanceof Error ? error.message : "文件解析错误"}`,
+        );
+      }
+    },
+    [onImport],
+  );
 
   const stats = useMemo(
     () => ({
@@ -55,7 +79,7 @@ export function ExportPanel({ events, todos, onClose }: Props) {
       todoCount: todos.length,
       dateRange: getDateRange(events),
     }),
-    [events],
+    [events, todos],
   );
 
   return (
@@ -156,6 +180,32 @@ export function ExportPanel({ events, todos, onClose }: Props) {
           </div>
         )}
 
+        {/* 导入 JSON */}
+        <div className="export-section">
+          <label className="settings-label">从 JSON 备份导入</label>
+          <div className="export-import-row">
+            <input
+              type="file"
+              accept=".json,application/json"
+              onChange={handleImportFile}
+            />
+            <span className="settings-hint" style={{ margin: 0 }}>
+              导入会<b>覆盖</b>当前数据，请先确认已导出备份。
+            </span>
+          </div>
+          {importMessage && (
+            <div
+              className={`settings-message ${
+                importMessage.startsWith("✅")
+                  ? "settings-message-success"
+                  : "settings-message-error"
+              }`}
+            >
+              {importMessage}
+            </div>
+          )}
+        </div>
+
         {/* 操作按钮 */}
         <div className="record-actions">
           <button
@@ -193,7 +243,7 @@ function getDateRange(events: EventItem[]): string | null {
   return `${dates[0]} ~ ${dates[dates.length - 1]}`;
 }
 
-function buildCsv(
+export function buildCsv(
   events: EventItem[],
   todos: TodoItem[],
 ): { eventRows: string; todoRows: string } {

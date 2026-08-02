@@ -18,11 +18,12 @@ import type { EventItem, TodoItem } from "@/types";
 type Props = {
   events: EventItem[];
   todos: TodoItem[];
+  customTags?: string[];
   onDataLoaded: (events: EventItem[], todos: TodoItem[]) => void;
   onClose: () => void;
 };
 
-export function SettingsPanel({ events, todos, onDataLoaded, onClose }: Props) {
+export function SettingsPanel({ events, todos, customTags = [], onDataLoaded, onClose }: Props) {
   const [token, setToken] = useState("");
   const [configured, setConfigured] = useState(false);
   const [syncStatus, setSyncStatus] = useState(getSyncStatus());
@@ -76,7 +77,7 @@ export function SettingsPanel({ events, todos, onDataLoaded, onClose }: Props) {
     setMessage(null);
 
     try {
-      await pushToCloud(events, todos);
+      await pushToCloud(events, todos, customTags);
       setMessage("✅ 数据已同步到云端");
     } catch (error) {
       setMessage(
@@ -85,7 +86,7 @@ export function SettingsPanel({ events, todos, onDataLoaded, onClose }: Props) {
     } finally {
       setLoading(false);
     }
-  }, [events, todos]);
+  }, [events, todos, customTags]);
 
   const handleLoadFromCloud = useCallback(async () => {
     if (

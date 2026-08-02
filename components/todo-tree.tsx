@@ -7,6 +7,8 @@ type TodoTreeProps = {
   linkedEventTitles?: Record<string, string>;
   maxDisplay?: number;
   onTodoClick?: (todo: TodoTreeNode) => void;
+  selectedIds?: Set<string>;
+  onToggleSelect?: (id: string) => void;
 };
 
 const statusText = {
@@ -22,19 +24,40 @@ const priorityText = {
   low: "低",
 };
 
-export function TodoTree({ nodes, depth = 0, linkedEventTitles = {}, maxDisplay, onTodoClick }: TodoTreeProps) {
+export function TodoTree({ nodes, depth = 0, linkedEventTitles = {}, maxDisplay, onTodoClick, selectedIds, onToggleSelect }: TodoTreeProps) {
   const displayNodes = maxDisplay ? nodes.slice(0, maxDisplay) : nodes;
-  
+  const selectable = !!onToggleSelect;
+
+  const handleKeyDown = (node: TodoTreeNode, e: React.KeyboardEvent) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      onTodoClick?.(node);
+    }
+  };
+
   return (
     <div className="todo-tree">
       {displayNodes.map((node) => (
         <div key={node.id} className="todo-branch">
           <article
-            className="todo-card"
+            className={`todo-card ${selectedIds?.has(node.id) ? "todo-card-selected" : ""}`}
             style={{ marginLeft: depth * 20, cursor: "pointer" }}
             onClick={() => onTodoClick?.(node)}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => handleKeyDown(node, e)}
           >
             <div className="todo-main">
+              {selectable && (
+                <input
+                  type="checkbox"
+                  className="todo-select-checkbox"
+                  checked={selectedIds?.has(node.id) ?? false}
+                  onClick={(e) => e.stopPropagation()}
+                  onChange={() => onToggleSelect?.(node.id)}
+                  aria-label={`选择 ${node.title}`}
+                />
+              )}
               <span className={`checkbox checkbox-${node.computedStatus}`} />
               <div>
                 <h4>{node.title}</h4>
@@ -47,7 +70,11 @@ export function TodoTree({ nodes, depth = 0, linkedEventTitles = {}, maxDisplay,
             </div>
             <div className="todo-meta">
               {node.startTime ? <span>开始：{formatDateTime(node.startTime)}</span> : null}
-              {node.dueDate ? <span>截止：{formatDateTime(node.dueDate)}</span> : <span>未设截止时间</span>}
+              {node.dueDate ? (
+                <span>截止：{formatDateTime(node.dueDate)}</span>
+              ) : !node.startTime ? (
+                <span>未设截止时间</span>
+              ) : null}
               
               {/* 显示关联的多个时间点 */}
               {node.linkedEventIds?.length ? (
@@ -118,7 +145,16 @@ export function TodoTree({ nodes, depth = 0, linkedEventTitles = {}, maxDisplay,
               </div>
             </div>
           </article>
-          {node.children.length ? <TodoTree nodes={node.children} depth={depth + 1} onTodoClick={onTodoClick} /> : null}
+          {node.children.length ? (
+            <TodoTree
+              nodes={node.children}
+              depth={depth + 1}
+              linkedEventTitles={linkedEventTitles}
+              onTodoClick={onTodoClick}
+              selectedIds={selectedIds}
+              onToggleSelect={onToggleSelect}
+            />
+          ) : null}
         </div>
       ))}
     </div>

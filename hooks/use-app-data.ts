@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   loadAndMigrateFromStorage,
   saveEventsToStorage,
@@ -11,6 +11,10 @@ import {
   loadCustomTags,
   addCustomTag as addTag,
   saveCustomTags,
+  getSyncStatus,
+  getSyncError,
+  getLastSyncAt,
+  onSyncChange,
 } from "@/lib/storage";
 import { syncLinkedItems } from "@/lib/utils";
 
@@ -20,11 +24,20 @@ export type AppData = SyncedData & {
   customTags: string[];
   isInitialized: boolean;
   cloudEnabled: boolean;
+  isOnline: boolean;
+  syncStatus: "idle" | "syncing" | "success" | "error";
+  syncError: string | null;
+  lastSyncAt: string | null;
+  canUndo: boolean;
   addCustomTag: (tag: string) => void;
   deleteCustomTag: (tag: string) => void;
+  setCustomTags: (tags: string[]) => void;
   setData: (data: SyncedData) => void;
+  undo: () => void;
   refreshCloudStatus: () => void;
 };
+
+const MAX_UNDO_STEPS = 20;
 
 /**
  * 封装页面共享的数据加载、持久化、云同步逻辑。
@@ -40,9 +53,21 @@ export function useAppData(): AppData {
     return { events: [], todos: [] };
   });
 
-  const [customTags, setCustomTags] = useState<string[]>(() => loadCustomTags());
+  const [customTags, setTagsState] = useState<string[]>(() => loadCustomTags());
   // 初始值 false 避免 SSR hydration 不一致（localStorage 仅在浏览器可用）
   const [cloudEnabled, setCloudEnabled] = useState(false);
+  const [isOnline, setIsOnline] = useState(
+    typeof navigator !== "undefined" ? navigator.onLine : true,
+  );
+
+  // 云同步状态（同步指标、设置面板共享）
+  const [syncStatus, setSyncStatus] = useState(getSyncStatus());
+  const [syncError, setSyncError] = useState(getSyncError());
+  const [lastSyncAt, setLastSyncAt] = useState(getLastSyncAt());
+
+  // 撤销历史栈
+  const historyRef = useRef<Array<{ events: typeof events; todos: typeof todos }>>([]);
+  const [canUndo, setCanUndo] = useState(false);
 
   // 初始化：标记就绪 + 读取云同步状态 + 自动从云端拉取（合并为单个 effect 减少 commit）
   useEffect(() => {
@@ -54,7 +79,7 @@ export function useAppData(): AppData {
       pullAndMerge(events, todos, customTags).then((result) => {
         if (!result) return;
         if (result.customTags.length > customTags.length) {
-          setCustomTags(result.customTags);
+          setTagsState(result.customTags);
         }
         if (result.mergedFromRemote) {
           const synced = syncLinkedItems(result.events, result.todos);
@@ -65,6 +90,27 @@ export function useAppData(): AppData {
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // 监听云同步状态变化（由 storage.ts 的 onSyncChange 广播）
+  useEffect(() => {
+    return onSyncChange(() => {
+      setSyncStatus(getSyncStatus());
+      setSyncError(getSyncError());
+      setLastSyncAt(getLastSyncAt());
+    });
+  }, []);
+
+  // 在线/离线监听
+  useEffect(() => {
+    const goOnline = () => setIsOnline(true);
+    const goOffline = () => setIsOnline(false);
+    window.addEventListener("online", goOnline);
+    window.addEventListener("offline", goOffline);
+    return () => {
+      window.removeEventListener("online", goOnline);
+      window.removeEventListener("offline", goOffline);
+    };
   }, []);
 
   // 数据变更 → 自动存 LocalStorage
@@ -82,9 +128,9 @@ export function useAppData(): AppData {
     }
   }, [customTags, isInitialized]);
 
-  // 云同步自动推送（3 秒防抖）
+  // 云同步自动推送（3 秒防抖；离线时跳过）
   useEffect(() => {
-    if (!isInitialized) return;
+    if (!isInitialized || !isOnline) return;
 
     const settings = loadSettings();
     if (!settings) return;
@@ -92,25 +138,49 @@ export function useAppData(): AppData {
     const timer = setTimeout(async () => {
       const result = await pushToCloud(events, todos, customTags);
       if (result.customTags.length > customTags.length) {
-        setCustomTags(result.customTags);
+        setTagsState(result.customTags);
       }
     }, 3000);
 
     return () => clearTimeout(timer);
-  }, [events, todos, customTags, isInitialized]);
+  }, [events, todos, customTags, isInitialized, isOnline]);
 
   const addCustomTag = useCallback(
-    (tag: string) => setCustomTags(addTag(tag)),
+    (tag: string) => setTagsState(addTag(tag)),
     [],
   );
 
   const deleteCustomTag = useCallback(
-    (tag: string) => setCustomTags((prev) => prev.filter((t) => t !== tag)),
+    (tag: string) => setTagsState((prev) => prev.filter((t) => t !== tag)),
     [],
   );
 
+  const setCustomTags = useCallback((tags: string[]) => {
+    setTagsState(Array.from(new Set(tags.filter(Boolean))));
+  }, []);
+
   const refreshCloudStatus = useCallback(() => {
     setCloudEnabled(loadSettings() !== null);
+  }, []);
+
+  // 带撤销历史的 setData：每次修改前快照当前数据入栈
+  const setDataWithHistory = useCallback(
+    (next: SyncedData) => {
+      historyRef.current = [
+        ...historyRef.current.slice(-(MAX_UNDO_STEPS - 1)),
+        { events, todos },
+      ];
+      setCanUndo(true);
+      setData(next);
+    },
+    [events, todos],
+  );
+
+  const undo = useCallback(() => {
+    const prev = historyRef.current.pop();
+    if (!prev) return;
+    setData(prev);
+    setCanUndo(historyRef.current.length > 0);
   }, []);
 
   return {
@@ -119,9 +189,16 @@ export function useAppData(): AppData {
     customTags,
     isInitialized,
     cloudEnabled,
+    isOnline,
+    syncStatus,
+    syncError,
+    lastSyncAt,
+    canUndo,
     addCustomTag,
     deleteCustomTag,
-    setData,
+    setCustomTags,
+    setData: setDataWithHistory,
+    undo,
     refreshCloudStatus,
   };
 }

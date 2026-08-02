@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { DayTimeline } from "@/components/day-timeline";
 import { DiaryTimeline } from "@/components/diary-timeline";
@@ -10,16 +9,33 @@ import { TaskFormPanel } from "@/components/task-form-panel";
 import { WorkRecordPanel } from "@/components/work-record-panel";
 import { SettingsPanel } from "@/components/settings-panel";
 import { ExportPanel } from "@/components/export-panel";
+import { TagManagerPanel } from "@/components/tag-manager-panel";
+import { AppHeader } from "@/components/app-header";
+import { StatsDashboard } from "@/components/stats-dashboard";
 import { HelpIcon } from "@/components/help-icon";
 import { departmentOptions } from "@/lib/sample-data";
-import { buildTodoTree, formatDateTime, getFilterValues, getTodayFocus, syncLinkedItems } from "@/lib/utils";
+import { BASE_TAGS } from "@/lib/constants";
+import {
+  buildTodoTree,
+  formatDateTime,
+  getFilterValues,
+  getTodayFocus,
+  syncLinkedItems,
+  toPinyin,
+  toPinyinInitials,
+} from "@/lib/utils";
+import { useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts";
 import { EventItem, SearchResult, TodoItem } from "@/types";
 import { useAppData } from "@/hooks/use-app-data";
 
+/** 搜索结果 + 拼音字段（预计算，避免每次按键重复转换） */
+type SearchItem = SearchResult & { pinyin: string; initials: string };
+
 export default function HomePage() {
   const {
-    events, todos, customTags, isInitialized, cloudEnabled,
-    addCustomTag, deleteCustomTag, setData, refreshCloudStatus,
+    events, todos, customTags, isInitialized, cloudEnabled, isOnline,
+    syncStatus, syncError, canUndo, addCustomTag, deleteCustomTag,
+    setCustomTags, setData, undo, refreshCloudStatus,
   } = useAppData();
 
   const [departmentFilter, setDepartmentFilter] = useState<string>("全部部门");
@@ -30,8 +46,11 @@ export default function HomePage() {
   const [showTaskFormPanel, setShowTaskFormPanel] = useState(false);
   const [showSettingsPanel, setShowSettingsPanel] = useState(false);
   const [showExportPanel, setShowExportPanel] = useState(false);
+  const [showTagsPanel, setShowTagsPanel] = useState(false);
   const [editingEvent, setEditingEvent] = useState<EventItem | undefined>(undefined);
   const [editingTodo, setEditingTodo] = useState<TodoItem | undefined>(undefined);
+  const [selectedTodoIds, setSelectedTodoIds] = useState<Set<string>>(new Set());
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   // 时间轴缩放控制（状态提升到 header 工具栏）
   const [timelineScale, setTimelineScale] = useState(1 / 7);
@@ -130,36 +149,52 @@ export default function HomePage() {
   const linkedTodoTitles = useMemo(() => Object.fromEntries(todos.map((todo) => [todo.id, todo.title])), [todos]);
   const linkedEventTitles = useMemo(() => Object.fromEntries(events.map((event) => [event.id, event.title])), [events]);
 
+  // 预计算全部搜索项（含拼音），仅在数据变化时重建
+  const allSearchItems = useMemo<SearchItem[]>(() => {
+    const build = (items: SearchItem[]) => items;
+    return build([
+      ...todos.map((todo) => {
+        const text = `${todo.title} ${todo.department ?? ""} ${todo.contactPerson ?? ""} ${todo.remarks ?? ""} ${todo.tags.join(" ")}`;
+        return {
+          id: `todo-${todo.id}`,
+          kind: "todo" as const,
+          title: todo.title,
+          snippet: [todo.department, todo.contactPerson, todo.remarks].filter(Boolean).join(" · ") || "待办事项",
+          dateLabel: todo.dueDate ? `截止 ${formatDateTime(todo.dueDate)}` : "未设置截止时间",
+          tags: todo.tags,
+          pinyin: toPinyin(text),
+          initials: toPinyinInitials(text),
+        };
+      }),
+      ...events.map((event) => {
+        const text = `${event.title} ${event.detail ?? ""} ${event.tags.join(" ")}`;
+        return {
+          id: `event-${event.id}`,
+          kind: "event" as const,
+          title: event.title,
+          snippet: event.detail ?? "工作记录",
+          dateLabel: formatDateTime(event.startTime),
+          tags: event.tags,
+          pinyin: toPinyin(text),
+          initials: toPinyinInitials(text),
+        };
+      }),
+    ]);
+  }, [events, todos]);
+
+  // 过滤（依赖 query 变化；拼音支持全拼 + 首字母）
   const searchResults = useMemo<SearchResult[]>(() => {
     const normalizedQuery = searchQuery.trim().toLowerCase();
-    const baseResults: SearchResult[] = [
-      ...todos.map((todo) => ({
-        id: `todo-${todo.id}`,
-        kind: "todo" as const,
-        title: todo.title,
-        snippet: [todo.department, todo.contactPerson, todo.remarks].filter(Boolean).join(" · ") || "待办事项",
-        dateLabel: todo.dueDate ? `截止 ${formatDateTime(todo.dueDate)}` : "未设置截止时间",
-        tags: todo.tags,
-      })),
-      ...events.map((event) => ({
-        id: `event-${event.id}`,
-        kind: "event" as const,
-        title: event.title,
-        snippet: event.detail ?? "工作记录",
-        dateLabel: formatDateTime(event.startTime),
-        tags: event.tags,
-      })),
-    ];
-
-    if (!normalizedQuery) {
-      return [];
-    }
-
-    return baseResults.filter((result) => {
+    if (!normalizedQuery) return [];
+    return allSearchItems.filter((result) => {
       const haystack = `${result.title} ${result.snippet} ${result.tags.join(" ")}`.toLowerCase();
-      return haystack.includes(normalizedQuery);
+      return (
+        haystack.includes(normalizedQuery) ||
+        result.pinyin.includes(normalizedQuery) ||
+        result.initials.includes(normalizedQuery)
+      );
     });
-  }, [events, searchQuery, todos]);
+  }, [allSearchItems, searchQuery]);
 
   const handleSaveTask = (todo: TodoItem) => {
     const isUpdate = todos.some((t) => t.id === todo.id);
@@ -216,67 +251,116 @@ export default function HomePage() {
     setEditingTodo(undefined);
   };
 
+  // 批量选择
+  const toggleSelectTodo = useCallback((id: string) => {
+    setSelectedTodoIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const batchDeleteTodos = useCallback(() => {
+    if (selectedTodoIds.size === 0) return;
+    if (!confirm(`确定删除选中的 ${selectedTodoIds.size} 个待办？此操作不可恢复。`)) return;
+    const nextTodos = todos.filter((t) => !selectedTodoIds.has(t.id));
+    const nextEvents = events.map((event) => ({
+      ...event,
+      linkedTodoIds: (event.linkedTodoIds ?? []).filter((tid) => !selectedTodoIds.has(tid)),
+    }));
+    setData(syncLinkedItems(nextEvents, nextTodos));
+    setSelectedTodoIds(new Set());
+  }, [selectedTodoIds, todos, events, setData]);
+
+  const batchSetStatus = useCallback((status: TodoItem["status"]) => {
+    if (selectedTodoIds.size === 0) return;
+    const nextTodos = todos.map((t) =>
+      selectedTodoIds.has(t.id)
+        ? { ...t, status, updatedAt: new Date().toISOString() }
+        : t,
+    );
+    setData(syncLinkedItems(events, nextTodos));
+    setSelectedTodoIds(new Set());
+  }, [selectedTodoIds, todos, events, setData]);
+
+  // 键盘快捷键
+  useKeyboardShortcuts({
+    onSearch: () => searchInputRef.current?.focus(),
+    onNewTask: () => setShowTaskFormPanel(true),
+    onNewRecord: () => setShowWorkRecordPanel(true),
+    onUndo: undo,
+    onEscape: () => {
+      setShowWorkRecordPanel(false);
+      setShowTaskFormPanel(false);
+      setShowSettingsPanel(false);
+      setShowExportPanel(false);
+      setShowTagsPanel(false);
+      setEditingEvent(undefined);
+      setEditingTodo(undefined);
+    },
+  });
+
+  // 未初始化时显示骨架屏
+  if (!isInitialized) {
+    return (
+      <main className="app-shell">
+        <div className="skeleton-block" style={{ height: 84 }} />
+        <div className="skeleton-block" style={{ height: 420 }} />
+        <div className="two-col">
+          <div className="skeleton-block" style={{ height: 220 }} />
+          <div className="skeleton-block" style={{ height: 220 }} />
+        </div>
+      </main>
+    );
+  }
+
+  // 空状态引导
+  const isEmpty = events.length === 0 && todos.length === 0;
+
   return (
     <main className="app-shell">
       <section className="workspace-simple">
-        <header className="page-header panel">
-          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-            <h1 style={{ fontSize: "clamp(2.4rem, 3vw, 3.2rem)" }}>办公助手</h1>
-            <HelpIcon tips={[
-              "聚焦时间轴回溯、今日记录、待办跟进与快速检索。",
-              "时间轴支持鼠标滚轮缩放（1小时 ~ 30天）和拖拽平移。",
-              "待办和工作记录自动同步到 GitHub Gist 云端。",
-              "使用右上角搜索框可以快速查找内容。",
-            ]} />
-          </div>
-          <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-            <nav className="page-nav">
-              <Link href="/" className="page-nav-link active">
-                时间轴
-              </Link>
-              <Link href="/calendar" className="page-nav-link">
-                日历
-              </Link>
-            </nav>
+        <AppHeader
+          activePage="timeline"
+          tips={[
+            "聚焦时间轴回溯、今日记录、待办跟进与快速检索。",
+            "时间轴支持鼠标滚轮缩放（1小时 ~ 30天）和拖拽平移。",
+            "待办和工作记录自动同步到 GitHub Gist 云端。",
+            "快捷键：Ctrl+K 搜索 · Ctrl+N 新建任务 · Ctrl+Shift+N 快速记录 · Ctrl+Z 撤销。",
+          ]}
+          cloudEnabled={cloudEnabled}
+          isOnline={isOnline}
+          syncStatus={syncStatus}
+          syncError={syncError}
+          canUndo={canUndo}
+          onQuickRecord={() => setShowWorkRecordPanel(true)}
+          onAddTask={() => setShowTaskFormPanel(true)}
+          onOpenSync={() => setShowSettingsPanel(true)}
+          onOpenExport={() => setShowExportPanel(true)}
+          onOpenTags={() => setShowTagsPanel(true)}
+          onUndo={undo}
+        />
 
-            {/* 快速记录工作 */}
-            <button
-              className="ghost-button"
-              type="button"
-              onClick={() => setShowWorkRecordPanel(true)}
-            >
-              📝 快速记录工作
-            </button>
-
-            {/* 添加任务 */}
-            <button
-              className="ghost-button"
-              type="button"
-              onClick={() => setShowTaskFormPanel(true)}
-            >
-              + 添加任务
-            </button>
-
-            {/* 同步按钮 → 弹出设置面板 */}
-            <button
-              className="ghost-button"
-              type="button"
-              onClick={() => setShowSettingsPanel(true)}
-            >
-              {cloudEnabled ? "☁️" : "⚙️"} 同步
-            </button>
-
-            {/* 导出 Excel 按钮 → 弹出设置面板 */}
-            <button
-              className="ghost-button"
-              type="button"
-              onClick={() => setShowExportPanel(true)}
-            >
-              📊 导出Excel
-            </button>
-
-          </div>
-        </header>
+        {isEmpty && (
+          <section className="grid overview-grid">
+            <article className="panel section-card empty-state">
+              <h2>👋 欢迎使用办公助手</h2>
+              <p>
+                这是一款面向体制内人事科的<b>工作回溯 + 待办管理</b>工具。
+                点击下方按钮开始记录今天的工作。
+              </p>
+              <div className="empty-actions">
+                <button className="primary-button" type="button" onClick={() => setShowWorkRecordPanel(true)}>
+                  📝 快速记录工作
+                </button>
+                <button className="ghost-button" type="button" onClick={() => setShowTaskFormPanel(true)}>
+                  + 添加任务
+                </button>
+              </div>
+            </article>
+          </section>
+        )}
 
         <div className="content-layout simple-layout">
           <section className="content-main">
@@ -339,6 +423,22 @@ export default function HomePage() {
                   </div>
                 </div>
                 <DayTimeline events={events} todos={todos} linkedTodoTitles={linkedTodoTitles} onEventClick={setEditingEvent} onTodoClick={setEditingTodo} scale={timelineScale} onScaleChange={setTimelineScale} scrollToTodayTrigger={scrollToTodayTrigger} scrollToDate={scrollToDate} />
+              </article>
+            </section>
+
+            {/* 数据统计 */}
+            <section className="grid overview-grid">
+              <article className="panel section-card">
+                <div className="section-head section-head-tight">
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                    <h2>数据统计</h2>
+                    <HelpIcon tips={[
+                      "展示工作记录量、待办状态分布和标签使用情况。",
+                      "标签分布取出现次数最多的前 8 个。",
+                    ]} />
+                  </div>
+                </div>
+                <StatsDashboard events={events} todos={todos} />
               </article>
             </section>
 
@@ -419,7 +519,7 @@ export default function HomePage() {
                       "使用顶部下拉菜单按\"部门\"和\"联系人\"筛选待办。",
                       "默认显示前3个待办，点击\"展开全部\"查看所有任务。",
                       "点击任意待办卡片可编辑内容或删除。",
-                      "待办支持设置优先级、状态、截止时间和子任务拆分。",
+                      "勾选多个待办后可批量修改状态或删除。",
                     ]} />
                   </div>
                   <div className="filters">
@@ -439,7 +539,26 @@ export default function HomePage() {
                     </select>
                   </div>
                 </div>
-                <TodoTree nodes={todoTree} linkedEventTitles={linkedEventTitles} maxDisplay={showAllTodos ? undefined : 3} onTodoClick={setEditingTodo} />
+
+                {selectedTodoIds.size > 0 && (
+                  <div className="batch-bar">
+                    <span>已选 {selectedTodoIds.size} 项</span>
+                    <button className="chip-button" type="button" onClick={() => batchSetStatus("in_progress")}>
+                      标记进行中
+                    </button>
+                    <button className="chip-button" type="button" onClick={() => batchSetStatus("completed")}>
+                      标记完成
+                    </button>
+                    <button className="chip-button batch-danger" type="button" onClick={batchDeleteTodos}>
+                      批量删除
+                    </button>
+                    <button className="chip-button" type="button" onClick={() => setSelectedTodoIds(new Set())}>
+                      取消选择
+                    </button>
+                  </div>
+                )}
+
+                <TodoTree nodes={todoTree} linkedEventTitles={linkedEventTitles} maxDisplay={showAllTodos ? undefined : 3} onTodoClick={setEditingTodo} selectedIds={selectedTodoIds} onToggleSelect={toggleSelectTodo} />
                 {todoTree.length > 3 && (
                   <button
                     className="ghost-button"
@@ -460,13 +579,13 @@ export default function HomePage() {
                     <h2>搜索结果</h2>
                     <HelpIcon tips={[
                       "输入关键词后自动搜索匹配的待办和工作记录。",
-                      "搜索范围包括标题、内容和标签。",
+                      "搜索范围包括标题、内容和标签，支持拼音。",
                       "结果按类型（待办 / 事件）分组显示。",
                       "清空搜索框可恢复默认列表。",
                     ]} />
                   </div>
                 </div>
-                <SearchPanel results={searchResults} query={searchQuery} onQueryChange={setSearchQuery} />
+                <SearchPanel results={searchResults} query={searchQuery} onQueryChange={setSearchQuery} inputRef={searchInputRef} />
               </article>
             </section>
           </section>
@@ -531,6 +650,7 @@ export default function HomePage() {
         <SettingsPanel
           events={events}
           todos={todos}
+          customTags={customTags}
           onDataLoaded={(loadedEvents, loadedTodos) => {
             const synced = syncLinkedItems(loadedEvents, loadedTodos);
             setData(synced);
@@ -547,7 +667,22 @@ export default function HomePage() {
         <ExportPanel
           events={events}
           todos={todos}
+          customTags={customTags}
+          onImport={(loadedEvents, loadedTodos, loadedTags) => {
+            const synced = syncLinkedItems(loadedEvents, loadedTodos);
+            setData(synced);
+            if (loadedTags.length) setCustomTags(loadedTags);
+          }}
           onClose={() => setShowExportPanel(false)}
+        />
+      )}
+
+      {showTagsPanel && (
+        <TagManagerPanel
+          baseTags={BASE_TAGS}
+          customTags={customTags}
+          onTagsChange={setCustomTags}
+          onClose={() => setShowTagsPanel(false)}
         />
       )}
 

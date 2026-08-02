@@ -1,4 +1,17 @@
 import { EventItem, Priority, TodoItem, TodoStatus, TodoTreeNode } from "@/types";
+import { pinyin } from "pinyin-pro";
+
+/**
+ * 生成唯一 ID。优先使用 crypto.randomUUID()（本地 HTTPS / localhost 环境可用），
+ * 旧浏览器回退到时间戳 + 随机串，避免同一毫秒内 ID 冲突。
+ */
+export function genId(prefix = ""): string {
+  const uid =
+    typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  return prefix ? `${prefix}-${uid}` : uid;
+}
 
 export function syncLinkedItems(events: EventItem[], todos: TodoItem[]) {
   const eventMap = new Map(events.map((event) => [event.id, event]));
@@ -181,4 +194,28 @@ export function exportRows(events: EventItem[] = [], todos: TodoItem[] = []) {
 
 export function toJsonBlock(data: unknown) {
   return JSON.stringify(data, null, 2);
+}
+
+/**
+ * 将文本转为无音调拼音（全拼），非中文字符按原样保留。
+ * 用于支持拼音搜索：如输入 "dangjian" 可匹配到 "党建"。
+ */
+export function toPinyin(text: string): string {
+  return pinyin(text, { toneType: "none", type: "array", nonZh: "consecutive" })
+    .join("")
+    .toLowerCase();
+}
+
+/**
+ * 将文本转为拼音首字母（如 "党建" → "dj"）。
+ */
+export function toPinyinInitials(text: string): string {
+  return pinyin(text, {
+    pattern: "first",
+    toneType: "none",
+    type: "array",
+    nonZh: "consecutive",
+  })
+    .join("")
+    .toLowerCase();
 }
