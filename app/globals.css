@@ -8,7 +8,7 @@
  *   styles/components.css  日记、标签、搜索、待办、日历、响应式
  *   styles/modal.css       模态弹窗、各面板、按钮
  *
- * 新增功能样式（暗色模式、统计、骨架屏、批量操作等）追加在下方。
+ * 新增功能样式（统计、骨架屏、批量操作等）追加在下方。
  * ============================================================ */
 
 @import "../styles/variables.css";
@@ -16,126 +16,6 @@
 @import "../styles/timeline.css";
 @import "../styles/components.css";
 @import "../styles/modal.css";
-
-/* ============================================================
- * 暗色模式（html[data-theme="dark"] 由 theme-toggle 控制）
- * ============================================================ */
-:root[data-theme="dark"] {
-  color-scheme: dark;
-  --bg: #0f1912;
-  --bg-soft: #16241c;
-  --panel: rgba(22, 34, 26, 0.92);
-  --panel-strong: rgba(18, 29, 22, 0.94);
-  --line: rgba(122, 172, 134, 0.18);
-  --text: #d9e8de;
-  --muted: #8ba895;
-  --accent: #7fc495;
-  --accent-cool: #5f9d77;
-  --danger: #e07a8e;
-  --success: #6cc084;
-  --shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
-}
-
-html[data-theme="dark"] {
-  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
-}
-
-:root[data-theme="dark"] body {
-  background:
-    radial-gradient(circle at top left, rgba(79, 143, 99, 0.16), transparent 24%),
-    radial-gradient(circle at right 20%, rgba(79, 143, 99, 0.07), transparent 22%),
-    linear-gradient(180deg, #0f1912 0%, #0b130d 100%);
-}
-
-:root[data-theme="dark"] ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.18);
-}
-
-:root[data-theme="dark"] ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.32);
-}
-
-:root[data-theme="dark"] .panel,
-:root[data-theme="dark"] .modal-panel {
-  background: linear-gradient(180deg, rgba(24, 38, 29, 0.95), rgba(16, 27, 20, 0.98));
-}
-
-:root[data-theme="dark"] .panel::after {
-  background: linear-gradient(130deg, rgba(255, 255, 255, 0.04), transparent 36%);
-}
-
-:root[data-theme="dark"] .page-nav {
-  background: rgba(79, 143, 99, 0.12);
-}
-
-:root[data-theme="dark"] .page-nav-link.active {
-  color: var(--accent);
-  background: rgba(30, 46, 36, 0.9);
-}
-
-:root[data-theme="dark"] .date-chip,
-:root[data-theme="dark"] .ghost-button,
-:root[data-theme="dark"] .filters select,
-:root[data-theme="dark"] .search-box input,
-:root[data-theme="dark"] .focus-item,
-:root[data-theme="dark"] .search-card,
-:root[data-theme="dark"] .todo-card,
-:root[data-theme="dark"] .diary-entry,
-:root[data-theme="dark"] .calendar-card {
-  background: rgba(30, 46, 36, 0.9);
-  border-color: rgba(122, 172, 134, 0.18);
-}
-
-:root[data-theme="dark"] .line-timeline-toolbar,
-:root[data-theme="dark"] .timeline-help-popover,
-:root[data-theme="dark"] .axis-zoom-button,
-:root[data-theme="dark"] .axis-hour-label,
-:root[data-theme="dark"] .line-day-chip {
-  background: rgba(24, 38, 29, 0.95);
-  color: var(--text);
-  border-color: rgba(122, 172, 134, 0.2);
-}
-
-:root[data-theme="dark"] .line-event-card {
-  color: var(--text);
-  background: color-mix(in srgb, #1c2d22 78%, var(--event-color) 22%);
-}
-
-:root[data-theme="dark"] .line-event-card p,
-:root[data-theme="dark"] .line-event-time {
-  color: var(--muted);
-}
-
-:root[data-theme="dark"] .line-day-chip,
-:root[data-theme="dark"] .link-badge,
-:root[data-theme="dark"] .calendar-card strong {
-  color: var(--accent);
-}
-
-:root[data-theme="dark"] .today-date-picker-inline,
-:root[data-theme="dark"] .task-form input,
-:root[data-theme="dark"] .task-form select,
-:root[data-theme="dark"] .task-form textarea,
-:root[data-theme="dark"] .record-custom-tag input,
-:root[data-theme="dark"] .calendar-date-picker {
-  background: var(--panel);
-  color: var(--text);
-}
-
-:root[data-theme="dark"] .export-block,
-:root[data-theme="dark"] .export-preview-block {
-  background: rgba(20, 32, 25, 0.94);
-  color: var(--text);
-}
-
-:root[data-theme="dark"] .priority-high {
-  color: #f09bb0;
-}
-
-:root[data-theme="dark"] .priority-medium,
-:root[data-theme="dark"] .priority-low {
-  color: #8fd4a6;
-}
 
 /* ============================================================
  * Header 标题区（AppHeader）
@@ -256,11 +136,6 @@ html[data-theme="dark"] {
   border-radius: 14px;
   border: 1px solid var(--line);
   background: rgba(255, 255, 255, 0.72);
-}
-
-:root[data-theme="dark"] .stat-tile {
-  background: rgba(30, 46, 36, 0.9);
-  border-color: rgba(122, 172, 134, 0.18);
 }
 
 .stat-tile strong {
@@ -470,10 +345,6 @@ html[data-theme="dark"] {
   color: inherit;
   border-radius: 3px;
   padding: 0 1px;
-}
-
-:root[data-theme="dark"] .search-mark {
-  background: rgba(224, 160, 64, 0.4);
 }
 
 /* ============================================================

@@ -1,6 +1,6 @@
 # AGENTS.md — Little Job Helper
 
-体制内人事科办公助手：单人浏览器端工具，Next.js 16 静态导出 + GitHub Pages 部署。
+浏览器端工作回溯 + 待办管理工具：单人使用，Next.js 16 静态导出 + GitHub Pages 部署。
 
 ## 技术栈
 

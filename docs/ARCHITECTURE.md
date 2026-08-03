@@ -5,7 +5,7 @@
 ```
 types.ts                    # 全局类型：EventItem, TodoItem, TodoTreeNode 等
 app/
-  layout.tsx                # 根布局：lang="zh-CN"、ErrorBoundary、主题初始化脚本
+  layout.tsx                # 根布局：lang="zh-CN"、ErrorBoundary
   globals.css               # 样式入口：@import styles/ 模块 + 新增功能样式
   page.tsx                  # 首页：时间轴、待办树、搜索、今日记录、统计
   calendar/page.tsx         # 日历页：按天查看 + 添加日程
@@ -16,7 +16,7 @@ styles/                     # CSS 按功能模块拆分（顺序即级联顺序�
   components.css            # 日记、标签、搜索、待办、日历、响应式
   modal.css                 # 模态弹窗、各面板、按钮
 components/
-  app-header.tsx            # 两页共用顶部导航栏（含同步状态指示、主题切换）
+  app-header.tsx            # 两页共用顶部导航栏（含同步状态指示）
   day-timeline.tsx          # 横向时间轴（缩放、虚拟化、拖拽平移）
   diary-timeline.tsx        # 文字日记时间轴
   search-panel.tsx          # 搜索结果（命中高亮）
@@ -28,7 +28,6 @@ components/
   tag-manager-panel.tsx     # 自定义标签管理面板
   stats-dashboard.tsx       # 数据统计概览
   help-icon.tsx             # 可复用 ⓘ 帮助图标
-  theme-toggle.tsx          # 亮/暗主题切换
   error-boundary.tsx        # 顶层错误边界
 hooks/
   use-app-data.ts           # 共享 hook：数据加载、持久化、云同步、撤销
@@ -126,8 +125,6 @@ loadAndMigrateFromStorage() → 有数据 → useState 初始化
 - 内联 `style` 仅用于运行时动态值（位置、颜色变量），静态样式放 CSS
 - **禁止 Tailwind 或任何 CSS 框架**
 - 样式按模块拆分到 `styles/`，`globals.css` 仅做 `@import`（顺序即级联顺序，新增模块追加在末尾）+ 少量新增样式
-- **暗色模式**：`html[data-theme="dark"]` 覆盖变量与关键硬编码色；切换按钮在 header，`layout.tsx` 内联脚本防 FOUC
-
 ## 工具函数分工
 
 - `lib/utils.ts`：纯函数，无副作用（`syncLinkedItems`、`buildTodoTree`、格式化、拼音、`genId`）
@@ -137,7 +134,7 @@ loadAndMigrateFromStorage() → 有数据 → useState 初始化
 
 ## 标签系统
 
-- 预设标签：`lib/constants.ts` 的 `BASE_TAGS` = `["党建", "人事", "纪检", "编制", "档案", "外出", "会议", "其他"]`
+- 预设标签：`lib/constants.ts` 的 `BASE_TAGS` = `["会议", "外出", "文档", "沟通", "审批", "备忘", "其他"]`
 - 交互：`.chip-button.chip-tag` 点击切换选中态
 - 自定义标签：输入框 + 回车添加，内联 ✕ 删除；可经"🏷️ 标签"面板集中管理
 - 保存时合并预设 + 自定义为 `tags: string[]`，无标签默认 `["其他"]`

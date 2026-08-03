@@ -262,7 +262,7 @@ export function WorkRecordPanel({ events, todos, linkedTodoTitles, editEvent, cu
             className="record-title-input"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            placeholder="做了什么？（例如：撰写党建汇报材料初稿）"
+            placeholder="做了什么？（例如：参加会议、处理邮件、推进项目任务）"
             autoFocus
           />
         </div>

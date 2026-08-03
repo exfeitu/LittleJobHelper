@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { HelpIcon } from "@/components/help-icon";
-import { ThemeToggle } from "@/components/theme-toggle";
 
 type SyncStatus = "idle" | "syncing" | "success" | "error";
 
@@ -104,7 +103,6 @@ export function AppHeader({
         >
           ↩ 撤销
         </button>
-        <ThemeToggle />
       </div>
     </header>
   );

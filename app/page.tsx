@@ -345,9 +345,9 @@ export default function HomePage() {
         {isEmpty && (
           <section className="grid overview-grid">
             <article className="panel section-card empty-state">
-              <h2>👋 欢迎使用办公助手</h2>
+              <h2>👋 欢迎使用</h2>
               <p>
-                这是一款面向体制内人事科的<b>工作回溯 + 待办管理</b>工具。
+                这是一款<b>工作回溯 + 待办管理</b>工具。
                 点击下方按钮开始记录今天的工作。
               </p>
               <div className="empty-actions">
