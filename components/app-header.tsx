@@ -12,13 +12,10 @@ type AppHeaderProps = {
   isOnline: boolean;
   syncStatus: SyncStatus;
   syncError: string | null;
-  canUndo: boolean;
   onQuickRecord: () => void;
   onAddTask: () => void;
   onOpenSync: () => void;
   onOpenExport: () => void;
-  onOpenTags: () => void;
-  onUndo: () => void;
 };
 
 const SYNC_DOT_TITLE: Record<SyncStatus, string> = {
@@ -39,13 +36,10 @@ export function AppHeader({
   isOnline,
   syncStatus,
   syncError,
-  canUndo,
   onQuickRecord,
   onAddTask,
   onOpenSync,
   onOpenExport,
-  onOpenTags,
-  onUndo,
 }: AppHeaderProps) {
   const dotTitle = syncError
     ? `${SYNC_DOT_TITLE[syncStatus]}：${syncError}`
@@ -90,18 +84,6 @@ export function AppHeader({
         </button>
         <button className="ghost-button" type="button" onClick={onOpenExport}>
           📊 导出
-        </button>
-        <button className="ghost-button" type="button" onClick={onOpenTags}>
-          🏷️ 标签
-        </button>
-        <button
-          className="ghost-button"
-          type="button"
-          onClick={onUndo}
-          disabled={!canUndo}
-          title="撤销上一步 (Ctrl+Z)"
-        >
-          ↩ 撤销
         </button>
       </div>
     </header>

@@ -254,6 +254,18 @@ button {
   background: rgba(79, 143, 99, 0.1);
 }
 
+.ghost-button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.ghost-button:disabled:hover {
+  transform: none;
+  border-color: rgba(108, 156, 120, 0.18);
+  background: rgba(255, 255, 255, 0.72);
+}
+
 .focus-list,
 .search-results,
 .diary-list,

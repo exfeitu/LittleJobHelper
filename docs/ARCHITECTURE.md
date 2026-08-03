@@ -25,7 +25,7 @@ components/
   task-form-panel.tsx       # 任务编辑弹窗（含子步骤编辑）
   settings-panel.tsx        # 云同步设置
   export-panel.tsx          # 导出 JSON/CSV + 导入 JSON
-  tag-manager-panel.tsx     # 自定义标签管理面板
+  backup-reminder.tsx       # 周一/周五首开"记得备份"气泡
   stats-dashboard.tsx       # 数据统计概览
   help-icon.tsx             # 可复用 ⓘ 帮助图标
   error-boundary.tsx        # 顶层错误边界
@@ -33,6 +33,7 @@ hooks/
   use-app-data.ts           # 共享 hook：数据加载、持久化、云同步、撤销
   use-keyboard-shortcuts.ts # 全局键盘快捷键
   use-focus-trap.ts         # 模态弹窗焦点锁定
+  use-backup-reminder.ts    # 备份提醒（周一周五首开去重）
 lib/
   storage.ts                # 存储层统一出口（re-export）
   storage-migrate.ts        # 数据版本迁移系统

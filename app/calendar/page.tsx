@@ -6,11 +6,10 @@ import { HelpIcon } from "@/components/help-icon";
 import { SettingsPanel } from "@/components/settings-panel";
 import { TaskFormPanel } from "@/components/task-form-panel";
 import { WorkRecordPanel } from "@/components/work-record-panel";
-import { TagManagerPanel } from "@/components/tag-manager-panel";
 import { AppHeader } from "@/components/app-header";
+import { BackupReminder } from "@/components/backup-reminder";
 import { syncLinkedItems } from "@/lib/utils";
 import { formatDateTime, formatDiaryDate, getTodayFocus } from "@/lib/utils";
-import { BASE_TAGS } from "@/lib/constants";
 import { genId } from "@/lib/utils";
 import { useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts";
 import { EventItem, Priority, TodoItem, TodoStatus } from "@/types";
@@ -54,7 +53,6 @@ export default function CalendarPage() {
   const [showTaskFormPanel, setShowTaskFormPanel] = useState(false);
   const [showSettingsPanel, setShowSettingsPanel] = useState(false);
   const [showExportPanel, setShowExportPanel] = useState(false);
-  const [showTagsPanel, setShowTagsPanel] = useState(false);
   const [editingEvent, setEditingEvent] = useState<EventItem | undefined>(undefined);
   const [editingTodo, setEditingTodo] = useState<TodoItem | undefined>(undefined);
 
@@ -167,7 +165,6 @@ export default function CalendarPage() {
       setShowTaskFormPanel(false);
       setShowSettingsPanel(false);
       setShowExportPanel(false);
-      setShowTagsPanel(false);
       setEditingEvent(undefined);
       setEditingTodo(undefined);
     },
@@ -197,13 +194,10 @@ export default function CalendarPage() {
           isOnline={isOnline}
           syncStatus={syncStatus}
           syncError={syncError}
-          canUndo={canUndo}
           onQuickRecord={() => setShowWorkRecordPanel(true)}
           onAddTask={() => setShowTaskFormPanel(true)}
           onOpenSync={() => setShowSettingsPanel(true)}
           onOpenExport={() => setShowExportPanel(true)}
-          onOpenTags={() => setShowTagsPanel(true)}
-          onUndo={undo}
         />
 
         <div className="calendar-layout">
@@ -219,6 +213,15 @@ export default function CalendarPage() {
                 ]} />
               </div>
               <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                <button
+                  className="ghost-button"
+                  type="button"
+                  onClick={undo}
+                  disabled={!canUndo}
+                  title="撤销上一步 (Ctrl+Z)"
+                >
+                  ↩ 撤销
+                </button>
                 <button
                   className="axis-today-button"
                   type="button"
@@ -416,14 +419,7 @@ export default function CalendarPage() {
         />
       )}
 
-      {showTagsPanel && (
-        <TagManagerPanel
-          baseTags={BASE_TAGS}
-          customTags={customTags}
-          onTagsChange={setCustomTags}
-          onClose={() => setShowTagsPanel(false)}
-        />
-      )}
+      <BackupReminder onOpenExport={() => setShowExportPanel(true)} />
 
       {showWorkRecordPanel && (
         <WorkRecordPanel

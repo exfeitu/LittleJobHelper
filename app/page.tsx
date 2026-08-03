@@ -9,12 +9,11 @@ import { TaskFormPanel } from "@/components/task-form-panel";
 import { WorkRecordPanel } from "@/components/work-record-panel";
 import { SettingsPanel } from "@/components/settings-panel";
 import { ExportPanel } from "@/components/export-panel";
-import { TagManagerPanel } from "@/components/tag-manager-panel";
 import { AppHeader } from "@/components/app-header";
+import { BackupReminder } from "@/components/backup-reminder";
 import { StatsDashboard } from "@/components/stats-dashboard";
 import { HelpIcon } from "@/components/help-icon";
 import { departmentOptions } from "@/lib/sample-data";
-import { BASE_TAGS } from "@/lib/constants";
 import {
   buildTodoTree,
   formatDateTime,
@@ -46,7 +45,6 @@ export default function HomePage() {
   const [showTaskFormPanel, setShowTaskFormPanel] = useState(false);
   const [showSettingsPanel, setShowSettingsPanel] = useState(false);
   const [showExportPanel, setShowExportPanel] = useState(false);
-  const [showTagsPanel, setShowTagsPanel] = useState(false);
   const [editingEvent, setEditingEvent] = useState<EventItem | undefined>(undefined);
   const [editingTodo, setEditingTodo] = useState<TodoItem | undefined>(undefined);
   const [selectedTodoIds, setSelectedTodoIds] = useState<Set<string>>(new Set());
@@ -295,7 +293,6 @@ export default function HomePage() {
       setShowTaskFormPanel(false);
       setShowSettingsPanel(false);
       setShowExportPanel(false);
-      setShowTagsPanel(false);
       setEditingEvent(undefined);
       setEditingTodo(undefined);
     },
@@ -315,9 +312,6 @@ export default function HomePage() {
     );
   }
 
-  // 空状态引导
-  const isEmpty = events.length === 0 && todos.length === 0;
-
   return (
     <main className="app-shell">
       <section className="workspace-simple">
@@ -333,34 +327,11 @@ export default function HomePage() {
           isOnline={isOnline}
           syncStatus={syncStatus}
           syncError={syncError}
-          canUndo={canUndo}
           onQuickRecord={() => setShowWorkRecordPanel(true)}
           onAddTask={() => setShowTaskFormPanel(true)}
           onOpenSync={() => setShowSettingsPanel(true)}
           onOpenExport={() => setShowExportPanel(true)}
-          onOpenTags={() => setShowTagsPanel(true)}
-          onUndo={undo}
         />
-
-        {isEmpty && (
-          <section className="grid overview-grid">
-            <article className="panel section-card empty-state">
-              <h2>👋 欢迎使用</h2>
-              <p>
-                这是一款<b>工作回溯 + 待办管理</b>工具。
-                点击下方按钮开始记录今天的工作。
-              </p>
-              <div className="empty-actions">
-                <button className="primary-button" type="button" onClick={() => setShowWorkRecordPanel(true)}>
-                  📝 快速记录工作
-                </button>
-                <button className="ghost-button" type="button" onClick={() => setShowTaskFormPanel(true)}>
-                  + 添加任务
-                </button>
-              </div>
-            </article>
-          </section>
-        )}
 
         <div className="content-layout simple-layout">
           <section className="content-main">
@@ -379,6 +350,15 @@ export default function HomePage() {
                     ]} />
                   </div>
                   <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                    <button
+                      className="ghost-button"
+                      type="button"
+                      onClick={undo}
+                      disabled={!canUndo}
+                      title="撤销上一步 (Ctrl+Z)"
+                    >
+                      ↩ 撤销
+                    </button>
                     <button
                       className="axis-today-button"
                       type="button"
@@ -423,22 +403,6 @@ export default function HomePage() {
                   </div>
                 </div>
                 <DayTimeline events={events} todos={todos} linkedTodoTitles={linkedTodoTitles} onEventClick={setEditingEvent} onTodoClick={setEditingTodo} scale={timelineScale} onScaleChange={setTimelineScale} scrollToTodayTrigger={scrollToTodayTrigger} scrollToDate={scrollToDate} />
-              </article>
-            </section>
-
-            {/* 数据统计 */}
-            <section className="grid overview-grid">
-              <article className="panel section-card">
-                <div className="section-head section-head-tight">
-                  <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                    <h2>数据统计</h2>
-                    <HelpIcon tips={[
-                      "展示工作记录量、待办状态分布和标签使用情况。",
-                      "标签分布取出现次数最多的前 8 个。",
-                    ]} />
-                  </div>
-                </div>
-                <StatsDashboard events={events} todos={todos} />
               </article>
             </section>
 
@@ -509,6 +473,22 @@ export default function HomePage() {
                 </article>
               </section>
             </div>
+
+            {/* 数据统计（不太重要，置于今日待办/工作记录下方） */}
+            <section className="grid overview-grid">
+              <article className="panel section-card">
+                <div className="section-head section-head-tight">
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                    <h2>数据统计</h2>
+                    <HelpIcon tips={[
+                      "展示工作记录量、待办状态分布和标签使用情况。",
+                      "标签分布取出现次数最多的前 8 个。",
+                    ]} />
+                  </div>
+                </div>
+                <StatsDashboard events={events} todos={todos} />
+              </article>
+            </section>
 
             <section className="grid overview-grid">
               <article className="panel section-card">
@@ -677,15 +657,7 @@ export default function HomePage() {
         />
       )}
 
-      {showTagsPanel && (
-        <TagManagerPanel
-          baseTags={BASE_TAGS}
-          customTags={customTags}
-          onTagsChange={setCustomTags}
-          onClose={() => setShowTagsPanel(false)}
-        />
-      )}
-
+      <BackupReminder onOpenExport={() => setShowExportPanel(true)} />
     </main>
   );
 }
