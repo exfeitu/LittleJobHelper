@@ -48,7 +48,7 @@ export function AppHeader({
   return (
     <header className="page-header panel">
       <div className="page-header-title">
-        <h1>办公助手</h1>
+        <h1>工作台账</h1>
         <HelpIcon tips={tips} />
       </div>
       <div className="page-header-actions">

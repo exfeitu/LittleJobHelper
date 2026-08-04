@@ -7,7 +7,7 @@ import {
 } from "@/lib/storage-local";
 
 const GIST_FILENAME = "little-job-helper-data.json";
-const GIST_DESCRIPTION = "Little Job Helper 工作数据";
+const GIST_DESCRIPTION = "工作台账 · 工作数据";
 const GIST_API_BASE = "https://api.github.com";
 
 // ============================================================
@@ -111,7 +111,7 @@ function gistHeaders(token: string): Record<string, string> {
 }
 
 /**
- * 查找当前用户下已有的 LittleJobHelper Gist
+ * 查找当前用户下已有的工作台账 Gist
  */
 async function findExistingGist(token: string): Promise<string | null> {
   try {
