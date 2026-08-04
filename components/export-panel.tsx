@@ -19,8 +19,9 @@ export function ExportPanel({ events, todos, customTags = [], onImport, onClose 
   const [importMessage, setImportMessage] = useState<string | null>(null);
 
   const jsonPreview = useMemo(
-    () => toJsonBlock(exportRows(events, todos)),
-    [events, todos],
+    // 与备份文件结构保持一致：工作记录 + 待办 + 自定义标签
+    () => toJsonBlock({ ...exportRows(events, todos), customTags }),
+    [events, todos, customTags],
   );
 
   const handleExport = useCallback(() => {
