@@ -11,7 +11,9 @@ permissions:
   id-token: write
 
 concurrency:
-  group: "pages"
+  # 曾用 "pages"；GitHub 故障期间产生了一个 run 级状态卡死在 waiting 的僵尸运行，
+  # 永久占住旧并发组，导致组内新运行全部排队。改名绕开该僵尸运行。
+  group: "pages-deploy"
   cancel-in-progress: false
 
 jobs:
