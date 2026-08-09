@@ -413,7 +413,8 @@ export default function CalendarPage() {
           onImport={(loadedEvents, loadedTodos, loadedTags) => {
             const synced = syncLinkedItems(loadedEvents, loadedTodos);
             setData(synced);
-            if (loadedTags.length) setCustomTags(loadedTags);
+            // 标签随导入覆盖（旧备份无标签字段时 importDataFromFile 已回退为保留本地标签）
+            setCustomTags(loadedTags);
           }}
           onClose={() => setShowExportPanel(false)}
         />

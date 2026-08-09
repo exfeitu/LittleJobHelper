@@ -56,4 +56,14 @@ describe("buildCsv", () => {
     const { eventRows } = buildCsv([e], []);
     expect(eventRows).not.toContain("t1");
   });
+
+  it("自定义标签进入 tagRows，一个标签一行", () => {
+    const { tagRows } = buildCsv([], [], ["党建", "人事", "纪检"]);
+    expect(tagRows).toBe("党建\n人事\n纪检");
+  });
+
+  it("无自定义标签时 tagRows 为空串（导出面板显示（无））", () => {
+    const { tagRows } = buildCsv([], [], []);
+    expect(tagRows).toBe("");
+  });
 });

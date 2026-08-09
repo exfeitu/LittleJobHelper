@@ -269,9 +269,12 @@ export function importDataFromFile(file: File): Promise<{
         }
 
         const fileVersion = parseVersion(data.version);
-        const customTags: string[] = Array.isArray(data.customTags)
+        // 旧版备份没有 customTags 字段：保留当前本地标签，避免导入旧备份时误删用户数据。
+        // 新版备份即使为空数组也如实覆盖，遵循"导入会覆盖当前数据"的约定。
+        const hasCustomTags = Array.isArray(data.customTags);
+        const customTags: string[] = hasCustomTags
           ? Array.from(new Set((data.customTags as string[]).filter((t) => typeof t === "string")))
-          : [];
+          : loadCustomTags();
 
         if (fileVersion < CURRENT_DATA_VERSION) {
           const migrated = migrateData(

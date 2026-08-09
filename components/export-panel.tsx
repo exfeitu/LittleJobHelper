@@ -28,15 +28,17 @@ export function ExportPanel({ events, todos, customTags = [], onImport, onClose 
     if (format === "json") {
       exportDataAsFile(events, todos, customTags);
     } else {
-      // CSV 导出：用 BOM 保证 Excel 正确识别中文
-      const { eventRows, todoRows } = buildCsv(events, todos);
+      // CSV 导出：用 BOM 保证 Excel 正确识别中文；末尾附自定义标签，避免信息遗漏
+      const { eventRows, todoRows, tagRows } = buildCsv(events, todos, customTags);
       const bom = "﻿";
       const csvContent =
         bom +
         "--- 工作记录 ---\n" +
         eventRows +
         "\n\n--- 待办任务 ---\n" +
-        todoRows;
+        todoRows +
+        "\n\n--- 自定义标签 ---\n" +
+        (tagRows || "（无）");
 
       const blob = new Blob([csvContent], {
         type: "text/csv;charset=utf-8",
@@ -247,7 +249,8 @@ function getDateRange(events: EventItem[]): string | null {
 export function buildCsv(
   events: EventItem[],
   todos: TodoItem[],
-): { eventRows: string; todoRows: string } {
+  customTags: string[] = [],
+): { eventRows: string; todoRows: string; tagRows: string } {
   const eventHeader = "日期,开始时间,结束时间,标题,详情,标签";
   const eventRows = [
     eventHeader,
@@ -286,7 +289,9 @@ export function buildCsv(
     ),
   ].join("\n");
 
-  return { eventRows, todoRows };
+  const tagRows = customTags.map((t) => csvCell(t)).join("\n");
+
+  return { eventRows, todoRows, tagRows };
 }
 
 function csvCell(value: string): string {
