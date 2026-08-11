@@ -7,6 +7,9 @@ export const metadata: Metadata = {
   description:
     "工作台账是一款浏览器端的工作记录与待办管理工具，支持时间轴回溯、多级待办、日历视图、搜索与云端同步。",
   keywords: ["工作记录", "待办管理", "工作日志", "时间轴", "待办清单", "云端同步"],
+  verification: {
+    google: "ccFgabF-XtAufcDFkRsUf9m1jfQl2F5IAR5fkLFfJBg",
+  },
   openGraph: {
     title: "工作台账 - 工作记录与待办管理工具",
     description:
