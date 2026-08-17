@@ -48,4 +48,25 @@ describe("migrateData", () => {
     migrateData(data as never, 0);
     expect(JSON.stringify(data)).toBe(snapshot);
   });
+
+  it("v2 → v3：无 memos 时补空数组", () => {
+    const data = {
+      events: [],
+      todos: [],
+      memos: undefined,
+    };
+    const result = migrateData(data, 2);
+    expect(result.memos).toEqual([]);
+  });
+
+  it("v2 → v3：已有 memos 时原样保留", () => {
+    const memos = [{ id: "m1", type: "note", title: "复盘", tags: [], createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z" }];
+    const data = { events: [], todos: [], memos };
+    const result = migrateData(data, 2);
+    expect(result.memos).toEqual(memos);
+  });
+
+  it("当前版本为 3", () => {
+    expect(CURRENT_DATA_VERSION).toBe(3);
+  });
 });

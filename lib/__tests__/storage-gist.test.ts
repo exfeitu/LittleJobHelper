@@ -43,3 +43,23 @@ describe("mergeItems", () => {
     expect(merged.map((m) => m.id).sort()).toEqual(["a", "b"]);
   });
 });
+
+describe("mergeItems（备忘录）", () => {
+  type MemoLike = { id: string; updatedAt: string; title: string };
+
+  it("本地备忘保留，远端旧 Gist（无备忘）不丢失本地数据", () => {
+    const local: MemoLike[] = [{ id: "m1", updatedAt: "2026-01-01T00:00:00Z", title: "复盘" }];
+    const remote: MemoLike[] = []; // 模拟旧 Gist 无 memos 字段 → 默认 []
+    const { merged, fromRemote } = mergeItems(local, remote);
+    expect(merged.map((m) => m.id)).toEqual(["m1"]);
+    expect(fromRemote).toEqual([]);
+  });
+
+  it("备忘录按 updatedAt 合并，远端较新采纳", () => {
+    const local: MemoLike[] = [{ id: "m1", updatedAt: "2026-01-01T00:00:00Z", title: "旧版" }];
+    const remote: MemoLike[] = [{ id: "m1", updatedAt: "2026-02-01T00:00:00Z", title: "新版" }];
+    const { merged, fromRemote } = mergeItems(local, remote);
+    expect(merged[0].title).toBe("新版");
+    expect(fromRemote).toEqual(["m1"]);
+  });
+});

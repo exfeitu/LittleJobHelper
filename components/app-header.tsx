@@ -6,7 +6,7 @@ import { HelpIcon } from "@/components/help-icon";
 type SyncStatus = "idle" | "syncing" | "success" | "error";
 
 type AppHeaderProps = {
-  activePage: "timeline" | "calendar";
+  activePage: "timeline" | "calendar" | "memo";
   tips: string[];
   cloudEnabled: boolean;
   isOnline: boolean;
@@ -16,6 +16,8 @@ type AppHeaderProps = {
   onAddTask: () => void;
   onOpenSync: () => void;
   onOpenExport: () => void;
+  /** 隐藏"快速记录/添加任务"等与备忘录页无关的快捷操作 */
+  hideQuickActions?: boolean;
 };
 
 const SYNC_DOT_TITLE: Record<SyncStatus, string> = {
@@ -40,6 +42,7 @@ export function AppHeader({
   onAddTask,
   onOpenSync,
   onOpenExport,
+  hideQuickActions = false,
 }: AppHeaderProps) {
   const dotTitle = syncError
     ? `${SYNC_DOT_TITLE[syncStatus]}：${syncError}`
@@ -59,6 +62,9 @@ export function AppHeader({
           <Link href="/calendar" className={`page-nav-link ${activePage === "calendar" ? "active" : ""}`}>
             日历
           </Link>
+          <Link href="/memo" className={`page-nav-link ${activePage === "memo" ? "active" : ""}`}>
+            备忘录
+          </Link>
         </nav>
 
         {!isOnline && (
@@ -67,12 +73,16 @@ export function AppHeader({
           </span>
         )}
 
-        <button className="ghost-button" type="button" onClick={onQuickRecord}>
-          📝 快速记录工作
-        </button>
-        <button className="ghost-button" type="button" onClick={onAddTask}>
-          + 添加任务
-        </button>
+        {!hideQuickActions && (
+          <>
+            <button className="ghost-button" type="button" onClick={onQuickRecord}>
+              📝 快速记录工作
+            </button>
+            <button className="ghost-button" type="button" onClick={onAddTask}>
+              + 添加任务
+            </button>
+          </>
+        )}
         <button
           className="ghost-button sync-status-button"
           type="button"

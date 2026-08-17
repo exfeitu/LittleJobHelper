@@ -33,6 +33,12 @@ function highlight(text: string, query: string): React.ReactNode {
 }
 
 export function SearchPanel({ results, query, onQueryChange, inputRef }: SearchPanelProps) {
+  const kindLabel = (kind: SearchResult["kind"]) => {
+    if (kind === "todo") return "待办";
+    if (kind === "event") return "工作记录";
+    return "备忘录";
+  };
+
   return (
     <div className="search-results-wrap" role="search">
       <div className="search-box">
@@ -40,7 +46,7 @@ export function SearchPanel({ results, query, onQueryChange, inputRef }: SearchP
           ref={inputRef}
           value={query}
           onChange={(event) => onQueryChange(event.target.value)}
-          placeholder="搜索待办、工作记录、联系人、标签（支持拼音）"
+          placeholder="搜索待办、工作记录、备忘录、联系人、标签（支持拼音）"
           aria-label="搜索"
         />
       </div>
@@ -49,7 +55,7 @@ export function SearchPanel({ results, query, onQueryChange, inputRef }: SearchP
           results.map((result) => (
             <article key={result.id} className="search-card">
               <div className="search-card-top">
-                <span className={`pill pill-${result.kind}`}>{result.kind === "todo" ? "待办" : "工作记录"}</span>
+                <span className={`pill pill-${result.kind}`}>{kindLabel(result.kind)}</span>
                 <span className="search-date">{result.dateLabel}</span>
               </div>
               <h4>{highlight(result.title, query)}</h4>

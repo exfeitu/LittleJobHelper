@@ -1,8 +1,9 @@
-import { EventItem, TodoItem } from "@/types";
+import { EventItem, MemoItem, TodoItem } from "@/types";
 import { CURRENT_DATA_VERSION, migrateData, parseVersion } from "@/lib/storage-migrate";
 import {
   loadCustomTags,
   loadEventsFromStorage,
+  loadMemosFromStorage,
   loadTodosFromStorage,
 } from "@/lib/storage-local";
 
@@ -141,6 +142,7 @@ async function createGist(
   events: EventItem[],
   todos: TodoItem[],
   customTags: string[],
+  memos: MemoItem[] = [],
 ): Promise<string | null> {
   try {
     const content = JSON.stringify(
@@ -150,6 +152,7 @@ async function createGist(
         events,
         todos,
         customTags,
+        memos,
       },
       null,
       2,
@@ -193,6 +196,7 @@ async function updateGist(
   events: EventItem[],
   todos: TodoItem[],
   customTags: string[],
+  memos: MemoItem[] = [],
 ): Promise<void> {
   const content = JSON.stringify(
     {
@@ -201,6 +205,7 @@ async function updateGist(
       events,
       todos,
       customTags,
+      memos,
     },
     null,
     2,
@@ -225,12 +230,13 @@ async function updateGist(
 }
 
 /**
- * 从 Gist 拉取原始数据（含版本号，不做迁移）
+ * 从 Gist 拉取原始数据（含版本号，不做迁移）。
+ * 兼容旧版云端数据：无 memos 字段时默认空数组，不报错。
  */
 async function fetchRawGist(
   token: string,
   gistId: string,
-): Promise<{ events: EventItem[]; todos: TodoItem[]; customTags: string[]; version: number } | null> {
+): Promise<{ events: EventItem[]; todos: TodoItem[]; customTags: string[]; memos: MemoItem[]; version: number } | null> {
   try {
     const res = await fetch(`${GIST_API_BASE}/gists/${gistId}`, {
       headers: gistHeaders(token),
@@ -253,6 +259,7 @@ async function fetchRawGist(
       events: parsed.events as EventItem[],
       todos: parsed.todos as TodoItem[],
       customTags: (parsed.customTags as string[]) ?? [],
+      memos: (parsed.memos as MemoItem[]) ?? [],
     };
   } catch {
     return null;
@@ -326,7 +333,13 @@ export async function initCloudSync(token: string): Promise<GistSettings> {
   if (!gistId) {
     const storedEvents = loadEventsFromStorage();
     const storedTodos = loadTodosFromStorage();
-    gistId = await createGist(token, storedEvents ?? [], storedTodos ?? [], loadCustomTags());
+    gistId = await createGist(
+      token,
+      storedEvents ?? [],
+      storedTodos ?? [],
+      loadCustomTags(),
+      loadMemosFromStorage() ?? [],
+    );
     if (!gistId) {
       throw new Error("创建云端 Gist 失败，请重试");
     }
@@ -345,8 +358,10 @@ export async function pushToCloud(
   events: EventItem[],
   todos: TodoItem[],
   customTags?: string[],
+  memos?: MemoItem[],
 ): Promise<{ mergedFromRemote: boolean; customTags: string[] }> {
   const tags = customTags ?? loadCustomTags();
+  const localMemos = memos ?? loadMemosFromStorage() ?? [];
   const settings = loadSettings();
   if (!settings) return { mergedFromRemote: false, customTags: tags };
 
@@ -359,22 +374,27 @@ export async function pushToCloud(
     let finalEvents = events;
     let finalTodos = todos;
     let finalTags = tags;
+    let finalMemos = localMemos;
     let mergedFromRemote = false;
 
     if (remote) {
       // 2. ID 级别合并：updatedAt 最新胜出
       const eventsResult = mergeItems(events, remote.events);
       const todosResult = mergeItems(todos, remote.todos);
+      const memosResult = mergeItems(localMemos, remote.memos);
       finalEvents = eventsResult.merged;
       finalTodos = todosResult.merged;
+      finalMemos = memosResult.merged;
       // 标签合并：取并集（云端独有的也保留）
       finalTags = Array.from(new Set([...tags, ...(remote.customTags ?? [])]));
       mergedFromRemote =
-        eventsResult.fromRemote.length > 0 || todosResult.fromRemote.length > 0;
+        eventsResult.fromRemote.length > 0 ||
+        todosResult.fromRemote.length > 0 ||
+        memosResult.fromRemote.length > 0;
     }
 
     // 3. 推送合并后的数据
-    await updateGist(settings.token, settings.gistId, finalEvents, finalTodos, finalTags);
+    await updateGist(settings.token, settings.gistId, finalEvents, finalTodos, finalTags, finalMemos);
     setSyncStatus("success");
     return { mergedFromRemote, customTags: finalTags };
   } catch (error) {
@@ -394,10 +414,12 @@ export async function pullAndMerge(
   localEvents: EventItem[],
   localTodos: TodoItem[],
   localTags: string[],
+  localMemos?: MemoItem[],
 ): Promise<{
   events: EventItem[];
   todos: TodoItem[];
   customTags: string[];
+  memos: MemoItem[];
   mergedFromRemote: boolean;
 } | null> {
   const settings = loadSettings();
@@ -406,27 +428,37 @@ export async function pullAndMerge(
   setSyncStatus("syncing");
 
   try {
+    const localMemosArr = localMemos ?? loadMemosFromStorage() ?? [];
     const remote = await fetchRawGist(settings.token, settings.gistId);
     if (!remote) {
       setSyncStatus("success");
-      return { events: localEvents, todos: localTodos, customTags: localTags, mergedFromRemote: false };
+      return {
+        events: localEvents,
+        todos: localTodos,
+        customTags: localTags,
+        memos: localMemosArr,
+        mergedFromRemote: false,
+      };
     }
 
     // 迁移远端旧版本数据
     let remoteEvents = remote.events;
     let remoteTodos = remote.todos;
     let remoteTags = remote.customTags ?? [];
+    let remoteMemos = remote.memos ?? [];
     if (remote.version < CURRENT_DATA_VERSION) {
       const migrated = migrateData(
-        { events: remoteEvents, todos: remoteTodos },
+        { events: remoteEvents, todos: remoteTodos, memos: remoteMemos },
         remote.version,
       );
       remoteEvents = migrated.events;
       remoteTodos = migrated.todos;
+      remoteMemos = migrated.memos ?? remoteMemos;
     }
 
     const eventsResult = mergeItems(localEvents, remoteEvents);
     const todosResult = mergeItems(localTodos, remoteTodos);
+    const memosResult = mergeItems(localMemosArr, remoteMemos);
     const mergedTags = Array.from(new Set([...localTags, ...remoteTags]));
 
     setSyncStatus("success");
@@ -434,8 +466,11 @@ export async function pullAndMerge(
       events: eventsResult.merged,
       todos: todosResult.merged,
       customTags: mergedTags,
+      memos: memosResult.merged,
       mergedFromRemote:
-        eventsResult.fromRemote.length > 0 || todosResult.fromRemote.length > 0,
+        eventsResult.fromRemote.length > 0 ||
+        todosResult.fromRemote.length > 0 ||
+        memosResult.fromRemote.length > 0,
     };
   } catch (error) {
     const message =
@@ -452,6 +487,7 @@ export async function pullAndMerge(
 export async function pullFromCloud(): Promise<{
   events: EventItem[];
   todos: TodoItem[];
+  memos: MemoItem[];
 } | null> {
   const settings = loadSettings();
   if (!settings) {
@@ -469,15 +505,15 @@ export async function pullFromCloud(): Promise<{
 
     if (raw.version < CURRENT_DATA_VERSION) {
       const migrated = migrateData(
-        { events: raw.events, todos: raw.todos },
+        { events: raw.events, todos: raw.todos, memos: raw.memos ?? [] },
         raw.version,
       );
       setSyncStatus("success");
-      return migrated;
+      return { ...migrated, memos: migrated.memos ?? [] };
     }
 
     setSyncStatus("success");
-    return { events: raw.events, todos: raw.todos };
+    return { events: raw.events, todos: raw.todos, memos: raw.memos ?? [] };
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "从云端加载失败";

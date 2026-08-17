@@ -13,17 +13,18 @@ import {
   pushToCloud,
   type GistSettings,
 } from "@/lib/storage";
-import type { EventItem, TodoItem } from "@/types";
+import type { EventItem, MemoItem, TodoItem } from "@/types";
 
 type Props = {
   events: EventItem[];
   todos: TodoItem[];
   customTags?: string[];
-  onDataLoaded: (events: EventItem[], todos: TodoItem[]) => void;
+  memos?: MemoItem[];
+  onDataLoaded: (events: EventItem[], todos: TodoItem[], customTags: string[], memos: MemoItem[]) => void;
   onClose: () => void;
 };
 
-export function SettingsPanel({ events, todos, customTags = [], onDataLoaded, onClose }: Props) {
+export function SettingsPanel({ events, todos, customTags = [], memos = [], onDataLoaded, onClose }: Props) {
   const [token, setToken] = useState("");
   const [configured, setConfigured] = useState(false);
   const [syncStatus, setSyncStatus] = useState(getSyncStatus());
@@ -77,7 +78,7 @@ export function SettingsPanel({ events, todos, customTags = [], onDataLoaded, on
     setMessage(null);
 
     try {
-      await pushToCloud(events, todos, customTags);
+      await pushToCloud(events, todos, customTags, memos);
       setMessage("✅ 数据已同步到云端");
     } catch (error) {
       setMessage(
@@ -86,7 +87,7 @@ export function SettingsPanel({ events, todos, customTags = [], onDataLoaded, on
     } finally {
       setLoading(false);
     }
-  }, [events, todos, customTags]);
+  }, [events, todos, customTags, memos]);
 
   const handleLoadFromCloud = useCallback(async () => {
     if (
@@ -103,9 +104,9 @@ export function SettingsPanel({ events, todos, customTags = [], onDataLoaded, on
     try {
       const data = await pullFromCloud();
       if (data) {
-        onDataLoaded(data.events, data.todos);
+        onDataLoaded(data.events, data.todos, customTags, data.memos ?? []);
         setMessage(
-          `✅ 已从云端加载：${data.events.length} 条工作记录，${data.todos.length} 个待办任务`,
+          `✅ 已从云端加载：${data.events.length} 条工作记录，${data.todos.length} 个待办任务，${(data.memos ?? []).length} 条备忘录`,
         );
       }
     } catch (error) {
@@ -115,7 +116,7 @@ export function SettingsPanel({ events, todos, customTags = [], onDataLoaded, on
     } finally {
       setLoading(false);
     }
-  }, [onDataLoaded]);
+  }, [onDataLoaded, customTags]);
 
   const handleDisconnect = useCallback(() => {
     if (confirm("断开云同步将移除本地保存的 Token，云端数据不受影响。确定断开？")) {

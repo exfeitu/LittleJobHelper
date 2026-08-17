@@ -5,6 +5,7 @@ import { DayTimeline } from "@/components/day-timeline";
 import { DiaryTimeline } from "@/components/diary-timeline";
 import { SearchPanel } from "@/components/search-panel";
 import { TodoTree } from "@/components/todo-tree";
+import { ArchivedTodosPanel } from "@/components/archived-todos-panel";
 import { TaskFormPanel } from "@/components/task-form-panel";
 import { WorkRecordPanel } from "@/components/work-record-panel";
 import { SettingsPanel } from "@/components/settings-panel";
@@ -19,6 +20,8 @@ import {
   formatDateTime,
   getFilterValues,
   getTodayFocus,
+  isTodoActive,
+  isTodoArchived,
   syncLinkedItems,
   toPinyin,
   toPinyinInitials,
@@ -26,13 +29,14 @@ import {
 import { useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts";
 import { EventItem, SearchResult, TodoItem } from "@/types";
 import { useAppData } from "@/hooks/use-app-data";
+import { htmlToText, memoProgress, memoSearchText } from "@/lib/memo";
 
 /** 搜索结果 + 拼音字段（预计算，避免每次按键重复转换） */
 type SearchItem = SearchResult & { pinyin: string; initials: string };
 
 export default function HomePage() {
   const {
-    events, todos, customTags, isInitialized, cloudEnabled, isOnline,
+    events, todos, memos, setMemos, customTags, isInitialized, cloudEnabled, isOnline,
     syncStatus, syncError, canUndo, addCustomTag, deleteCustomTag,
     setCustomTags, setData, undo, refreshCloudStatus,
   } = useAppData();
@@ -136,7 +140,14 @@ export default function HomePage() {
     });
   }, [contactFilter, departmentFilter, todos]);
 
-  const todoTree = useMemo(() => buildTodoTree(filteredTodos), [filteredTodos]);
+  // 待办列表只显示未完成的（未开始/进行中）；已完成/已取消进入归档区
+  const activeTodos = useMemo(() => filteredTodos.filter(isTodoActive), [filteredTodos]);
+  const archivedTodos = useMemo(() => filteredTodos.filter(isTodoArchived), [filteredTodos]);
+  // 时间轴同样只展示未完成待办，避免已完成卡片造成"还有事没办"的误导（已完成的去归档区查看）
+  const timelineTodos = useMemo(() => todos.filter(isTodoActive), [todos]);
+
+  const todoTree = useMemo(() => buildTodoTree(activeTodos), [activeTodos]);
+  const archivedTodoTree = useMemo(() => buildTodoTree(archivedTodos), [archivedTodos]);
   const todayFocus = useMemo(() => getTodayFocus(filteredTodos), [filteredTodos]);
   const todayRecords = useMemo(() => {
     const now = new Date();
@@ -177,8 +188,27 @@ export default function HomePage() {
           initials: toPinyinInitials(text),
         };
       }),
+      ...memos.map((memo) => {
+        const text = memoSearchText(memo);
+        const progress = memo.type === "checklist" ? memoProgress(memo) : null;
+        return {
+          id: `memo-${memo.id}`,
+          kind: "memo" as const,
+          title: memo.title,
+          snippet:
+            memo.type === "checklist"
+              ? progress && progress.total > 0
+                ? `周期备忘 · ${progress.completed}/${progress.total} 步`
+                : "周期备忘"
+              : htmlToText(memo.content ?? "").slice(0, 80) || "复盘心得",
+          dateLabel: memo.date ? `备忘 ${memo.date}` : "备忘录",
+          tags: memo.tags,
+          pinyin: toPinyin(text),
+          initials: toPinyinInitials(text),
+        };
+      }),
     ]);
-  }, [events, todos]);
+  }, [events, todos, memos]);
 
   // 过滤（依赖 query 变化；拼音支持全拼 + 首字母）
   const searchResults = useMemo<SearchResult[]>(() => {
@@ -247,6 +277,14 @@ export default function HomePage() {
     }));
     setData(syncLinkedItems(nextEvents, nextTodos));
     setEditingTodo(undefined);
+  };
+
+  // 归档恢复：一键改回"进行中"，回到待办列表
+  const handleRestoreTodo = (id: string) => {
+    const nextTodos = todos.map((t) =>
+      t.id === id ? { ...t, status: "in_progress" as const, updatedAt: new Date().toISOString() } : t,
+    );
+    setData(syncLinkedItems(events, nextTodos));
   };
 
   // 批量选择
@@ -402,7 +440,7 @@ export default function HomePage() {
                     )}
                   </div>
                 </div>
-                <DayTimeline events={events} todos={todos} linkedTodoTitles={linkedTodoTitles} onEventClick={setEditingEvent} onTodoClick={setEditingTodo} scale={timelineScale} onScaleChange={setTimelineScale} scrollToTodayTrigger={scrollToTodayTrigger} scrollToDate={scrollToDate} />
+                <DayTimeline events={events} todos={timelineTodos} linkedTodoTitles={linkedTodoTitles} onEventClick={setEditingEvent} onTodoClick={setEditingTodo} scale={timelineScale} onScaleChange={setTimelineScale} scrollToTodayTrigger={scrollToTodayTrigger} scrollToDate={scrollToDate} />
               </article>
             </section>
 
@@ -495,9 +533,11 @@ export default function HomePage() {
                 <div className="section-head section-head-tight">
                   <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
                     <h2>待办任务</h2>
+                    <span className="todo-count-badge">未完成 {activeTodos.length} 项</span>
                     <HelpIcon tips={[
                       "使用顶部下拉菜单按\"部门\"和\"联系人\"筛选待办。",
-                      "默认显示前3个待办，点击\"展开全部\"查看所有任务。",
+                      "列表只显示未完成的待办，右上角数字即剩余待办数。",
+                      "已完成/已取消的任务自动进入下方\"已归档\"区。",
                       "点击任意待办卡片可编辑内容或删除。",
                       "勾选多个待办后可批量修改状态或删除。",
                     ]} />
@@ -538,19 +578,32 @@ export default function HomePage() {
                   </div>
                 )}
 
-                <TodoTree nodes={todoTree} linkedEventTitles={linkedEventTitles} maxDisplay={showAllTodos ? undefined : 3} onTodoClick={setEditingTodo} selectedIds={selectedTodoIds} onToggleSelect={toggleSelectTodo} />
-                {todoTree.length > 3 && (
+                {activeTodos.length === 0 ? (
+                  <p className="empty-note" style={{ padding: "16px 0" }}>
+                    没有未完成的待办 🎉
+                  </p>
+                ) : (
+                  <TodoTree nodes={todoTree} linkedEventTitles={linkedEventTitles} maxDisplay={showAllTodos ? undefined : 3} onTodoClick={setEditingTodo} selectedIds={selectedTodoIds} onToggleSelect={toggleSelectTodo} />
+                )}
+                {activeTodos.length > 3 && (
                   <button
                     className="ghost-button"
                     type="button"
                     onClick={() => setShowAllTodos(!showAllTodos)}
                     style={{ marginTop: '12px', width: '100%' }}
                   >
-                    {showAllTodos ? "收起" : `展开全部 (${todoTree.length} 个任务)`}
+                    {showAllTodos ? "收起" : `展开全部 (${activeTodos.length} 个未完成)`}
                   </button>
                 )}
               </article>
             </section>
+
+            {/* 已归档：已完成/已取消的待办，可查看与一键恢复 */}
+            <ArchivedTodosPanel
+              nodes={archivedTodoTree}
+              onRestore={handleRestoreTodo}
+              onTodoClick={setEditingTodo}
+            />
 
             <section className="grid overview-grid">
               <article className="panel section-card">
@@ -631,9 +684,12 @@ export default function HomePage() {
           events={events}
           todos={todos}
           customTags={customTags}
-          onDataLoaded={(loadedEvents, loadedTodos) => {
+          memos={memos}
+          onDataLoaded={(loadedEvents, loadedTodos, loadedTags, loadedMemos) => {
             const synced = syncLinkedItems(loadedEvents, loadedTodos);
             setData(synced);
+            setCustomTags(loadedTags);
+            setMemos(loadedMemos);
             setShowSettingsPanel(false);
           }}
           onClose={() => {
@@ -648,11 +704,13 @@ export default function HomePage() {
           events={events}
           todos={todos}
           customTags={customTags}
-          onImport={(loadedEvents, loadedTodos, loadedTags) => {
+          memos={memos}
+          onImport={(loadedEvents, loadedTodos, loadedTags, loadedMemos) => {
             const synced = syncLinkedItems(loadedEvents, loadedTodos);
             setData(synced);
             // 标签随导入覆盖（旧备份无标签字段时 importDataFromFile 已回退为保留本地标签）
             setCustomTags(loadedTags);
+            setMemos(loadedMemos);
           }}
           onClose={() => setShowExportPanel(false)}
         />

@@ -1,4 +1,4 @@
-import { EventItem, Priority, TodoItem, TodoStatus, TodoTreeNode } from "@/types";
+import { EventItem, MemoItem, Priority, TodoItem, TodoStatus, TodoTreeNode } from "@/types";
 import { pinyin } from "pinyin-pro";
 
 /**
@@ -160,13 +160,33 @@ export function getTodayFocus(items: TodoItem[]) {
     .sort(sortTodos);
 }
 
+/**
+ * 是否处于"待办中"状态：未开始 / 进行中。
+ * 用于待办列表（未完成数量、活跃待办树）。
+ */
+export function isTodoActive(todo: TodoItem): boolean {
+  return todo.status === "pending" || todo.status === "in_progress";
+}
+
+/**
+ * 是否已归档：已完成 / 已取消。
+ * 已归档任务不再显示在待办列表，进入归档区。
+ */
+export function isTodoArchived(todo: TodoItem): boolean {
+  return todo.status === "completed" || todo.status === "cancelled";
+}
+
 export function getFilterValues(items: TodoItem[], key: "department" | "contactPerson") {
   return Array.from(
     new Set(items.map((item) => item[key]).filter((value): value is string => Boolean(value))),
   ).sort((a, b) => a.localeCompare(b, "zh-CN"));
 }
 
-export function exportRows(events: EventItem[] = [], todos: TodoItem[] = []) {
+export function exportRows(
+  events: EventItem[] = [],
+  todos: TodoItem[] = [],
+  memos: MemoItem[] = [],
+) {
   return {
     events: events.map((event) => ({
       日期: event.startTime.slice(0, 10),
@@ -188,6 +208,14 @@ export function exportRows(events: EventItem[] = [], todos: TodoItem[] = []) {
       标签: todo.tags.join("、"),
       父任务ID: todo.parentId ?? "",
       关联时间轴ID: (todo.linkedEventIds ?? []).join("、"),
+    })),
+    memos: memos.map((memo) => ({
+      类型: memo.type === "note" ? "心得" : "备忘",
+      标题: memo.title,
+      关联日期: memo.date ?? "",
+      标签: memo.tags.join("、"),
+      正文: memo.content ?? "",
+      步骤: (memo.steps ?? []).map((s) => s.content).join(" | "),
     })),
   };
 }

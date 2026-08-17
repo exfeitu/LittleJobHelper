@@ -5,6 +5,8 @@ import {
   loadAndMigrateFromStorage,
   saveEventsToStorage,
   saveTodosToStorage,
+  saveMemosToStorage,
+  loadMemosFromStorage,
   pushToCloud,
   pullAndMerge,
   loadSettings,
@@ -17,10 +19,12 @@ import {
   onSyncChange,
 } from "@/lib/storage";
 import { syncLinkedItems } from "@/lib/utils";
+import type { MemoItem } from "@/types";
 
 type SyncedData = ReturnType<typeof syncLinkedItems>;
 
 export type AppData = SyncedData & {
+  memos: MemoItem[];
   customTags: string[];
   isInitialized: boolean;
   cloudEnabled: boolean;
@@ -29,11 +33,14 @@ export type AppData = SyncedData & {
   syncError: string | null;
   lastSyncAt: string | null;
   canUndo: boolean;
+  canUndoMemos: boolean;
   addCustomTag: (tag: string) => void;
   deleteCustomTag: (tag: string) => void;
   setCustomTags: (tags: string[]) => void;
   setData: (data: SyncedData) => void;
+  setMemos: (memos: MemoItem[]) => void;
   undo: () => void;
+  undoMemos: () => void;
   refreshCloudStatus: () => void;
 };
 
@@ -54,6 +61,7 @@ export function useAppData(): AppData {
   });
 
   const [customTags, setTagsState] = useState<string[]>(() => loadCustomTags());
+  const [memos, setMemosState] = useState<MemoItem[]>(() => loadMemosFromStorage() ?? []);
   // 初始值 false 避免 SSR hydration 不一致（localStorage 仅在浏览器可用）
   const [cloudEnabled, setCloudEnabled] = useState(false);
   const [isOnline, setIsOnline] = useState(
@@ -69,6 +77,10 @@ export function useAppData(): AppData {
   const historyRef = useRef<Array<{ events: typeof events; todos: typeof todos }>>([]);
   const [canUndo, setCanUndo] = useState(false);
 
+  // 备忘录独立撤销栈（与 events/todos 分离，避免改动既有 setData 签名）
+  const memosHistoryRef = useRef<Array<MemoItem[]>>([]);
+  const [canUndoMemos, setCanUndoMemos] = useState(false);
+
   // 初始化：标记就绪 + 读取云同步状态 + 自动从云端拉取（合并为单个 effect 减少 commit）
   useEffect(() => {
     setIsInitialized(true);
@@ -76,7 +88,7 @@ export function useAppData(): AppData {
     setCloudEnabled(cloudReady);
 
     if (cloudReady) {
-      pullAndMerge(events, todos, customTags).then((result) => {
+      pullAndMerge(events, todos, customTags, memos).then((result) => {
         if (!result) return;
         if (result.customTags.length > customTags.length) {
           setTagsState(result.customTags);
@@ -86,6 +98,9 @@ export function useAppData(): AppData {
           setData(synced);
           saveEventsToStorage(synced.events);
           saveTodosToStorage(synced.todos);
+          // 备忘录用普通 setter 落库（不压撤销栈，与 init 合并一致）
+          setMemosState(result.memos);
+          saveMemosToStorage(result.memos);
         }
       });
     }
@@ -128,6 +143,13 @@ export function useAppData(): AppData {
     }
   }, [customTags, isInitialized]);
 
+  // 备忘录变更 → 自动存 LocalStorage
+  useEffect(() => {
+    if (isInitialized) {
+      saveMemosToStorage(memos);
+    }
+  }, [memos, isInitialized]);
+
   // 云同步自动推送（3 秒防抖；离线时跳过）
   useEffect(() => {
     if (!isInitialized || !isOnline) return;
@@ -136,14 +158,14 @@ export function useAppData(): AppData {
     if (!settings) return;
 
     const timer = setTimeout(async () => {
-      const result = await pushToCloud(events, todos, customTags);
+      const result = await pushToCloud(events, todos, customTags, memos);
       if (result.customTags.length > customTags.length) {
         setTagsState(result.customTags);
       }
     }, 3000);
 
     return () => clearTimeout(timer);
-  }, [events, todos, customTags, isInitialized, isOnline]);
+  }, [events, todos, memos, customTags, isInitialized, isOnline]);
 
   const addCustomTag = useCallback(
     (tag: string) => setTagsState(addTag(tag)),
@@ -183,9 +205,30 @@ export function useAppData(): AppData {
     setCanUndo(historyRef.current.length > 0);
   }, []);
 
+  // 带撤销历史的 setMemos：每次修改前快照当前数据入栈
+  const setMemosWithHistory = useCallback(
+    (next: MemoItem[]) => {
+      memosHistoryRef.current = [
+        ...memosHistoryRef.current.slice(-(MAX_UNDO_STEPS - 1)),
+        memos,
+      ];
+      setCanUndoMemos(true);
+      setMemosState(next);
+    },
+    [memos],
+  );
+
+  const undoMemos = useCallback(() => {
+    const prev = memosHistoryRef.current.pop();
+    if (!prev) return;
+    setMemosState(prev);
+    setCanUndoMemos(memosHistoryRef.current.length > 0);
+  }, []);
+
   return {
     events,
     todos,
+    memos,
     customTags,
     isInitialized,
     cloudEnabled,
@@ -194,11 +237,14 @@ export function useAppData(): AppData {
     syncError,
     lastSyncAt,
     canUndo,
+    canUndoMemos,
     addCustomTag,
     deleteCustomTag,
     setCustomTags,
     setData: setDataWithHistory,
+    setMemos: setMemosWithHistory,
     undo,
+    undoMemos,
     refreshCloudStatus,
   };
 }

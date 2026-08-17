@@ -9,7 +9,7 @@ import { WorkRecordPanel } from "@/components/work-record-panel";
 import { AppHeader } from "@/components/app-header";
 import { BackupReminder } from "@/components/backup-reminder";
 import { syncLinkedItems } from "@/lib/utils";
-import { formatDateTime, formatDiaryDate, getTodayFocus } from "@/lib/utils";
+import { formatDateTime, formatDiaryDate, getTodayFocus, isTodoActive } from "@/lib/utils";
 import { genId } from "@/lib/utils";
 import { useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts";
 import { EventItem, Priority, TodoItem, TodoStatus } from "@/types";
@@ -41,7 +41,7 @@ function makeCalendarFormDefault(date: string) {
 
 export default function CalendarPage() {
   const {
-    events, todos, customTags, isInitialized, cloudEnabled, isOnline,
+    events, todos, memos, setMemos, customTags, isInitialized, cloudEnabled, isOnline,
     syncStatus, syncError, canUndo, addCustomTag, deleteCustomTag,
     setCustomTags, setData, undo, refreshCloudStatus,
   } = useAppData();
@@ -57,7 +57,11 @@ export default function CalendarPage() {
   const [editingTodo, setEditingTodo] = useState<TodoItem | undefined>(undefined);
 
   const eventsByDate = useMemo(() => events.filter((event) => event.startTime.startsWith(selectedDate)), [events, selectedDate]);
-  const todosByDate = useMemo(() => todos.filter((todo) => todo.dueDate?.startsWith(selectedDate)), [todos, selectedDate]);
+  // 当日待办只显示未完成的（已完成/已取消去归档）
+  const todosByDate = useMemo(
+    () => todos.filter((todo) => todo.dueDate?.startsWith(selectedDate) && isTodoActive(todo)),
+    [todos, selectedDate],
+  );
   const pinnedTodos = useMemo(() => getTodayFocus(todos).slice(0, 6), [todos]);
 
   const handleAddSchedule = () => {
@@ -393,9 +397,12 @@ export default function CalendarPage() {
           events={events}
           todos={todos}
           customTags={customTags}
-          onDataLoaded={(loadedEvents, loadedTodos) => {
+          memos={memos}
+          onDataLoaded={(loadedEvents, loadedTodos, loadedTags, loadedMemos) => {
             const synced = syncLinkedItems(loadedEvents, loadedTodos);
             setData(synced);
+            setCustomTags(loadedTags);
+            setMemos(loadedMemos);
             setShowSettingsPanel(false);
           }}
           onClose={() => {
@@ -410,11 +417,13 @@ export default function CalendarPage() {
           events={events}
           todos={todos}
           customTags={customTags}
-          onImport={(loadedEvents, loadedTodos, loadedTags) => {
+          memos={memos}
+          onImport={(loadedEvents, loadedTodos, loadedTags, loadedMemos) => {
             const synced = syncLinkedItems(loadedEvents, loadedTodos);
             setData(synced);
             // 标签随导入覆盖（旧备份无标签字段时 importDataFromFile 已回退为保留本地标签）
             setCustomTags(loadedTags);
+            setMemos(loadedMemos);
           }}
           onClose={() => setShowExportPanel(false)}
         />

@@ -21,9 +21,11 @@ export type { DataBundle } from "@/lib/storage-migrate";
 export {
   loadEventsFromStorage,
   loadTodosFromStorage,
+  loadMemosFromStorage,
   loadAndMigrateFromStorage,
   saveEventsToStorage,
   saveTodosToStorage,
+  saveMemosToStorage,
   loadCustomTags,
   saveCustomTags,
   addCustomTag,

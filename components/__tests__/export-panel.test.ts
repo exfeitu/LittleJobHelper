@@ -66,4 +66,30 @@ describe("buildCsv", () => {
     const { tagRows } = buildCsv([], [], []);
     expect(tagRows).toBe("");
   });
+
+  it("备忘录进入 memoRows，带表头且类型转换正确", () => {
+    const memo = {
+      id: "m1",
+      type: "checklist" as const,
+      title: "办理晋升,含逗号",
+      tags: ["人事"],
+      steps: [
+        { id: "s1", content: "核对身份证", completed: true },
+        { id: "s2", content: "盖章", completed: false, isWarning: true },
+      ],
+      createdAt: "2026-08-01T00:00:00Z",
+      updatedAt: "2026-08-01T00:00:00Z",
+    };
+    const { memoRows } = buildCsv([], [], [], [memo]);
+    const lines = memoRows.split("\n");
+    expect(lines[0]).toBe("类型,标题,关联日期,标签,内容摘要,步骤");
+    expect(lines[1]).toContain("备忘");
+    expect(lines[1]).toContain('"办理晋升,含逗号"'); // 含逗号被转义
+    expect(lines[1]).toContain("核对身份证 | 盖章");
+  });
+
+  it("无备忘录时 memoRows 仅表头（导出面板显示（无））", () => {
+    const { memoRows } = buildCsv([], [], [], []);
+    expect(memoRows.split("\n")[0]).toBe("类型,标题,关联日期,标签,内容摘要,步骤");
+  });
 });

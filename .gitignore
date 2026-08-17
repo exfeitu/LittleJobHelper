@@ -7,3 +7,7 @@ coverage
 
 # build artifacts
 tsconfig.tsbuildinfo
+
+# Playwright
+test-results
+playwright-report

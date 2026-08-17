@@ -3,6 +3,8 @@ import {
   buildTodoTree,
   exportRows,
   getTodayFocus,
+  isTodoActive,
+  isTodoArchived,
   sortTodos,
   syncLinkedItems,
   toPinyin,
@@ -118,6 +120,28 @@ describe("getTodayFocus", () => {
   });
 });
 
+describe("isTodoActive / isTodoArchived", () => {
+  it("pending 与 in_progress 属于活跃待办", () => {
+    expect(isTodoActive(makeTodo({ status: "pending" }))).toBe(true);
+    expect(isTodoActive(makeTodo({ status: "in_progress" }))).toBe(true);
+  });
+
+  it("completed 与 cancelled 不属于活跃待办", () => {
+    expect(isTodoActive(makeTodo({ status: "completed" }))).toBe(false);
+    expect(isTodoActive(makeTodo({ status: "cancelled" }))).toBe(false);
+  });
+
+  it("completed 与 cancelled 属于归档", () => {
+    expect(isTodoArchived(makeTodo({ status: "completed" }))).toBe(true);
+    expect(isTodoArchived(makeTodo({ status: "cancelled" }))).toBe(true);
+  });
+
+  it("pending 与 in_progress 不属于归档", () => {
+    expect(isTodoArchived(makeTodo({ status: "pending" }))).toBe(false);
+    expect(isTodoArchived(makeTodo({ status: "in_progress" }))).toBe(false);
+  });
+});
+
 describe("exportRows", () => {
   it("输出包含中文表头的行", () => {
     const event = makeEvent({ id: "e1", title: "写材料", tags: ["党建"] });
@@ -127,6 +151,26 @@ describe("exportRows", () => {
     expect(events[0].标签).toBe("党建");
     expect(todos[0].待办标题).toBe("送材料");
     expect(todos[0].状态).toBe("未开始");
+  });
+
+  it("带备忘录时输出备忘映射行", () => {
+    const memo = {
+      id: "m1",
+      type: "checklist" as const,
+      title: "办理晋升",
+      tags: ["人事"],
+      date: "2026-08-01",
+      steps: [
+        { id: "s1", content: "核对身份证", completed: true },
+        { id: "s2", content: "盖章", completed: false },
+      ],
+      createdAt: "2026-08-01T00:00:00Z",
+      updatedAt: "2026-08-01T00:00:00Z",
+    };
+    const { memos } = exportRows([], [], [memo]);
+    expect(memos[0].标题).toBe("办理晋升");
+    expect(memos[0].类型).toBe("备忘");
+    expect(memos[0].步骤).toBe("核对身份证 | 盖章");
   });
 });
 

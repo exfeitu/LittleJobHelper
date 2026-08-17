@@ -1,4 +1,4 @@
-import { EventItem, TodoItem } from "@/types";
+import { EventItem, MemoItem, TodoItem } from "@/types";
 
 // ============================================================
 // 数据版本与迁移系统
@@ -6,17 +6,23 @@ import { EventItem, TodoItem } from "@/types";
 
 /**
  * 当前数据版本（整数）。
- * 每当你修改 types.ts 中 EventItem / TodoItem 的字段（新增、重命名、改类型），
+ * 每当你修改 types.ts 中 EventItem / TodoItem / MemoItem 的字段（新增、重命名、改类型），
  * 请将 CURRENT_DATA_VERSION 加 1，并在下方的 migrations 数组中追加一个迁移函数。
  *
  * 版本历史：
  *   0 — 无版本号的 legacy 数据（2026-05 之前）
  *   1 — 当前版本（含所有 EventItem / TodoItem 字段 + 云同步支持）
  *   2 — 为所有条目添加 updatedAt 字段（用于多端同步冲突检测）
+ *   3 — 新增 MemoItem（备忘录）数据集合
  */
-export const CURRENT_DATA_VERSION = 2;
+export const CURRENT_DATA_VERSION = 3;
 
-export type DataBundle = { events: EventItem[]; todos: TodoItem[]; customTags?: string[] };
+export type DataBundle = {
+  events: EventItem[];
+  todos: TodoItem[];
+  customTags?: string[];
+  memos?: MemoItem[];
+};
 
 /**
  * 迁移函数数组：migrations[i] 负责从版本 i 迁移到 i+1。
@@ -29,6 +35,7 @@ const migrations: Array<(data: DataBundle) => DataBundle> = [
   (data) => {
     const now = new Date().toISOString();
     return {
+      ...data,
       events: data.events.map((e) => ({
         ...e,
         updatedAt: (e as Record<string, unknown>).updatedAt as string || now,
@@ -39,6 +46,8 @@ const migrations: Array<(data: DataBundle) => DataBundle> = [
       })),
     };
   },
+  // v2 → v3：引入 MemoItem 集合，旧数据无该字段时默认空数组
+  (data) => ({ ...data, memos: data.memos ?? [] }),
 ];
 
 /**

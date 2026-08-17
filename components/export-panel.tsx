@@ -3,33 +3,34 @@
 import { useCallback, useMemo, useState } from "react";
 import { exportDataAsFile, importDataFromFile } from "@/lib/storage";
 import { exportRows, toJsonBlock } from "@/lib/utils";
-import type { EventItem, TodoItem } from "@/types";
+import type { EventItem, MemoItem, TodoItem } from "@/types";
 
 type Props = {
   events: EventItem[];
   todos: TodoItem[];
   customTags?: string[];
-  onImport?: (events: EventItem[], todos: TodoItem[], customTags: string[]) => void;
+  memos?: MemoItem[];
+  onImport?: (events: EventItem[], todos: TodoItem[], customTags: string[], memos: MemoItem[]) => void;
   onClose: () => void;
 };
 
-export function ExportPanel({ events, todos, customTags = [], onImport, onClose }: Props) {
+export function ExportPanel({ events, todos, customTags = [], memos = [], onImport, onClose }: Props) {
   const [format, setFormat] = useState<"json" | "csv">("json");
   const [previewOpen, setPreviewOpen] = useState(false);
   const [importMessage, setImportMessage] = useState<string | null>(null);
 
   const jsonPreview = useMemo(
-    // 与备份文件结构保持一致：工作记录 + 待办 + 自定义标签
-    () => toJsonBlock({ ...exportRows(events, todos), customTags }),
-    [events, todos, customTags],
+    // 与备份文件结构保持一致：工作记录 + 待办 + 备忘录 + 自定义标签
+    () => toJsonBlock({ ...exportRows(events, todos, memos), customTags }),
+    [events, todos, memos, customTags],
   );
 
   const handleExport = useCallback(() => {
     if (format === "json") {
-      exportDataAsFile(events, todos, customTags);
+      exportDataAsFile(events, todos, customTags, memos);
     } else {
       // CSV 导出：用 BOM 保证 Excel 正确识别中文；末尾附自定义标签，避免信息遗漏
-      const { eventRows, todoRows, tagRows } = buildCsv(events, todos, customTags);
+      const { eventRows, todoRows, memoRows, tagRows } = buildCsv(events, todos, customTags, memos);
       const bom = "﻿";
       const csvContent =
         bom +
@@ -37,6 +38,8 @@ export function ExportPanel({ events, todos, customTags = [], onImport, onClose 
         eventRows +
         "\n\n--- 待办任务 ---\n" +
         todoRows +
+        "\n\n--- 备忘录 ---\n" +
+        (memoRows || "（无）") +
         "\n\n--- 自定义标签 ---\n" +
         (tagRows || "（无）");
 
@@ -53,7 +56,7 @@ export function ExportPanel({ events, todos, customTags = [], onImport, onClose 
       URL.revokeObjectURL(url);
     }
     onClose();
-  }, [events, format, todos, customTags, onClose]);
+  }, [events, format, todos, memos, customTags, onClose]);
 
   const handleImportFile = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -63,9 +66,9 @@ export function ExportPanel({ events, todos, customTags = [], onImport, onClose 
       setImportMessage(null);
       try {
         const result = await importDataFromFile(file);
-        onImport?.(result.events, result.todos, result.customTags);
+        onImport?.(result.events, result.todos, result.customTags, result.memos);
         setImportMessage(
-          `✅ 导入成功：${result.events.length} 条工作记录，${result.todos.length} 个待办任务${result.migrated ? "（已自动迁移）" : ""}`,
+          `✅ 导入成功：${result.events.length} 条工作记录，${result.todos.length} 个待办任务，${result.memos.length} 条备忘录${result.migrated ? "（已自动迁移）" : ""}`,
         );
       } catch (error) {
         setImportMessage(
@@ -80,9 +83,10 @@ export function ExportPanel({ events, todos, customTags = [], onImport, onClose 
     () => ({
       eventCount: events.length,
       todoCount: todos.length,
+      memoCount: memos.length,
       dateRange: getDateRange(events),
     }),
-    [events, todos],
+    [events, todos, memos],
   );
 
   return (
@@ -115,6 +119,9 @@ export function ExportPanel({ events, todos, customTags = [], onImport, onClose 
           </span>
           <span>
             ✅ 待办任务：<strong>{stats.todoCount}</strong> 个
+          </span>
+          <span>
+            📓 备忘录：<strong>{stats.memoCount}</strong> 条
           </span>
           {stats.dateRange && (
             <span>
@@ -250,7 +257,8 @@ export function buildCsv(
   events: EventItem[],
   todos: TodoItem[],
   customTags: string[] = [],
-): { eventRows: string; todoRows: string; tagRows: string } {
+  memos: MemoItem[] = [],
+): { eventRows: string; todoRows: string; memoRows: string; tagRows: string } {
   const eventHeader = "日期,开始时间,结束时间,标题,详情,标签";
   const eventRows = [
     eventHeader,
@@ -289,9 +297,24 @@ export function buildCsv(
     ),
   ].join("\n");
 
+  const memoHeader = "类型,标题,关联日期,标签,内容摘要,步骤";
+  const memoRows = [
+    memoHeader,
+    ...memos.map((m) =>
+      [
+        m.type === "note" ? "心得" : "备忘",
+        csvCell(m.title),
+        m.date ?? "",
+        csvCell(m.tags.join("、")),
+        csvCell(m.content ?? ""),
+        csvCell((m.steps ?? []).map((s) => s.content).join(" | ")),
+      ].join(","),
+    ),
+  ].join("\n");
+
   const tagRows = customTags.map((t) => csvCell(t)).join("\n");
 
-  return { eventRows, todoRows, tagRows };
+  return { eventRows, todoRows, memoRows, tagRows };
 }
 
 function csvCell(value: string): string {
