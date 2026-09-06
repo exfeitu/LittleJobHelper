@@ -52,6 +52,7 @@ export default function HomePage() {
   const [editingEvent, setEditingEvent] = useState<EventItem | undefined>(undefined);
   const [editingTodo, setEditingTodo] = useState<TodoItem | undefined>(undefined);
   const [selectedTodoIds, setSelectedTodoIds] = useState<Set<string>>(new Set());
+  const [todoSelectionMode, setTodoSelectionMode] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   // 时间轴缩放控制（状态提升到 header 工具栏）
@@ -307,6 +308,7 @@ export default function HomePage() {
     }));
     setData(syncLinkedItems(nextEvents, nextTodos));
     setSelectedTodoIds(new Set());
+    setTodoSelectionMode(false);
   }, [selectedTodoIds, todos, events, setData]);
 
   const batchSetStatus = useCallback((status: TodoItem["status"]) => {
@@ -318,6 +320,7 @@ export default function HomePage() {
     );
     setData(syncLinkedItems(events, nextTodos));
     setSelectedTodoIds(new Set());
+    setTodoSelectionMode(false);
   }, [selectedTodoIds, todos, events, setData]);
 
   // 键盘快捷键
@@ -543,6 +546,17 @@ export default function HomePage() {
                     ]} />
                   </div>
                   <div className="filters">
+                    <button
+                      className={`ghost-button todo-selection-mode-button ${todoSelectionMode ? "is-active" : ""}`}
+                      type="button"
+                      aria-pressed={todoSelectionMode}
+                      onClick={() => {
+                        setTodoSelectionMode((active) => !active);
+                        if (todoSelectionMode) setSelectedTodoIds(new Set());
+                      }}
+                    >
+                      {todoSelectionMode ? "退出批量" : "批量选择"}
+                    </button>
                     <select value={departmentFilter} onChange={(event) => setDepartmentFilter(event.target.value)}>
                       {departmentChoices.map((option) => (
                         <option key={option} value={option}>
@@ -572,7 +586,10 @@ export default function HomePage() {
                     <button className="chip-button batch-danger" type="button" onClick={batchDeleteTodos}>
                       批量删除
                     </button>
-                    <button className="chip-button" type="button" onClick={() => setSelectedTodoIds(new Set())}>
+                    <button className="chip-button" type="button" onClick={() => {
+                      setSelectedTodoIds(new Set());
+                      setTodoSelectionMode(false);
+                    }}>
                       取消选择
                     </button>
                   </div>
@@ -583,7 +600,7 @@ export default function HomePage() {
                     没有未完成的待办 🎉
                   </p>
                 ) : (
-                  <TodoTree nodes={todoTree} linkedEventTitles={linkedEventTitles} maxDisplay={showAllTodos ? undefined : 3} onTodoClick={setEditingTodo} selectedIds={selectedTodoIds} onToggleSelect={toggleSelectTodo} />
+                  <TodoTree nodes={todoTree} linkedEventTitles={linkedEventTitles} maxDisplay={showAllTodos ? undefined : 3} onTodoClick={setEditingTodo} selectedIds={selectedTodoIds} onToggleSelect={todoSelectionMode ? toggleSelectTodo : undefined} />
                 )}
                 {activeTodos.length > 3 && (
                   <button
