@@ -28,8 +28,8 @@ const SYNC_DOT_TITLE: Record<SyncStatus, string> = {
 };
 
 /**
- * 两个页面共用的顶部导航栏：品牌、帮助、导航、快捷操作、同步状态指示。
- * 由 app/page.tsx 和 app/calendar/page.tsx 复用，消除重复。
+ * 三个页面共用的顶部导航栏：品牌、帮助、导航、快捷操作、同步状态指示。
+ * 由时间轴、日历和备忘录页面复用，消除重复。
  */
 export function AppHeader({
   activePage,

@@ -1,12 +1,11 @@
 const { spawn } = require('child_process');
-const path = require('path');
 
-const nextBin = path.join(__dirname, '..', 'node_modules', '.bin', 'next');
+const nextBin = require.resolve('next/dist/bin/next');
 const BASE_PATH = '/LittleJobHelper';
 const PORT = '3536';
 
 console.log('正在启动开发服务器...');
-const next = spawn(nextBin, ['dev', '-p', PORT, '--webpack'], {
+const next = spawn(process.execPath, [nextBin, 'dev', '-p', PORT, '--webpack'], {
   stdio: 'inherit',
   env: { ...process.env, FORCE_COLOR: '1' }
 });

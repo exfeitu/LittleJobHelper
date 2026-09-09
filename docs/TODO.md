@@ -22,7 +22,7 @@
 
 | # | 项目 | 状态 |
 |---|------|------|
-| 9 | 提取 `components/app-header.tsx`（消除两页 Header 重复） | ✅ |
+| 9 | 提取 `components/app-header.tsx`（统一页面 Header 与导航） | ✅ |
 | 10 | 提取共享 `BASE_TAGS` → `lib/constants.ts` | ✅ |
 | 11 | 拆 `day-timeline.tsx` → `lib/timeline-layout.ts`（lane 分配、周聚合、转换） | ✅ |
 | 12 | 拆 `lib/storage.ts` → `storage-migrate.ts` + `storage-local.ts` + `storage-gist.ts` + re-export | ✅ |
@@ -64,10 +64,25 @@
 
 | # | 项目 | 状态 |
 |---|------|------|
-| 36 | Vitest 单元测试（35 例：utils / migrate / gist / timeline / buildCsv） | ✅ |
+| 36 | Vitest 单元测试（当前 66 例：utils / memo / storage / migrate / timeline / buildCsv 等） | ✅ |
 | 37 | CI 加 lint + test 步骤（deploy.yml） | ✅ |
 | 38 | Playwright E2E 冒烟测试（`tests/smoke.spec.ts`，需 `npx playwright install chromium`） | ✅ |
 | 39 | 配置修正：端口统一 3536、eslint 升级 v9 + flat config、eslint-config-next@16 | ✅ |
+
+---
+
+## ✅ 2026-09-09 后续演进补充
+
+| 项目 | 状态 |
+|------|------|
+| 备忘录 / 知识库：复盘心得 + 周期备忘 + 易错点 | ✅ |
+| 待办归档区与一键恢复 | ✅ |
+| 普通待办紧凑摘要 + 按需展开详情 | ✅ |
+| 显式批量选择模式 | ✅ |
+| 时间轴 low / medium / high 密度自适应 | ✅ |
+| 高/中/低优先级信息降级与低优先级日/周聚合 | ✅ |
+| 时间轴卡片二维装箱，上下/左右错位避让且保持真实锚点 | ✅ |
+| 时间轴布局专项测试 + 全量 Vitest / lint / build 验证 | ✅ |
 
 ---
 

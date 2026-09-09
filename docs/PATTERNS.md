@@ -4,7 +4,7 @@
 
 ---
 
-## 1. 给 EventItem 或 TodoItem 加字段
+## 1. 给 EventItem、TodoItem 或 MemoItem 加字段
 
 1. 在 `types.ts` 中加字段（可选字段用 `?`）
 2. `CURRENT_DATA_VERSION` 加 1，在 `migrations` 末尾追加迁移函数
@@ -19,10 +19,10 @@
 
 1. 在 `app/` 下创建目录 + `page.tsx`（以 `"use client"` 开头）
 2. 使用 `useAppData()` hook 获取数据和 cloudEnabled
-3. 在 `app/page.tsx` 的 `<nav>` 中加 `<Link>` 入口
+3. 在 `components/app-header.tsx` 中加入页面入口，并更新 `activePage` 类型/高亮逻辑
 4. **不要**创建 `layout.tsx`（除非该路由有独立布局需求）
 5. **不要**使用 `generateStaticParams` 或 `generateMetadata`（静态导出不支持）
-6. 如果要加云同步入口，参考 `app/page.tsx` 中的 `SettingsPanel` 调用方式
+6. 如果页面需要共享数据、云同步、导入导出或撤销，优先复用 `useAppData()` 和现有 `SettingsPanel` / `ExportPanel` 模式
 
 ---
 
@@ -30,8 +30,8 @@
 
 1. 在 `components/` 下创建文件，以 `"use client"` 开头
 2. Props 类型定义在组件文件内，用 `type` 不用 `interface`
-3. 样式加在 `app/globals.css` 中
-4. **不要**为组件创建独立 CSS 文件 — 所有样式集中在 `globals.css`
+3. 样式按职责加入 `styles/variables.css`、`layout.css`、`timeline.css`、`components.css` 或 `modal.css`
+4. `app/globals.css` 主要维护模块 `@import` 顺序；不要把大段组件样式重新堆回 `globals.css`
 
 ---
 
@@ -58,7 +58,7 @@
 ## 6. 修改数据存储结构
 
 1. 先在 `types.ts` 中改类型
-2. 在 `lib/storage.ts` 中：加版本号 → 加迁移函数 → 更新 Gist 数据结构
-3. **不要**直接改 LocalStorage key 名 — 导致用户历史数据丢失
-4. `importDataFromFile()` 只检查 `events` 和 `todos` 字段存在，不校验完整性
-5. 如果改了 Gist JSON 结构，`createGist`、`updateGist`、`fetchRawGist` 都要同步更新
+2. 在 `lib/storage-migrate.ts` 中更新 `CURRENT_DATA_VERSION` 并追加 migration
+3. 在 `lib/storage-local.ts` 同步 LocalStorage、导入导出和结构校验；**不要**直接改既有 key 名
+4. 在 `lib/storage-gist.ts` 同步 `createGist`、`updateGist`、`fetchRawGist`、`pushToCloud` / `pullAndMerge`
+5. 新字段必须考虑旧备份/旧 Gist 缺失时的默认值，并补对应 migration / storage 单测

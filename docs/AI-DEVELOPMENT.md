@@ -124,7 +124,7 @@ v4: 基本完善（当前）                    → 7 个变更模式，AI 按�
 2. 代码重构（消除重复，拆大文件）
 3. 文档更新（AGENTS.md 与代码同步）
 
-**本项目的当前状态**：刚完成 `useAppData` hook 提取，消除了 page.tsx 和 calendar 的重复代码。
+**本项目的当前状态（2026-09-09）**：已形成 `useAppData` 共享数据层，页面扩展到时间轴、日历、备忘录三部分；存储已拆成 local/migrate/gist；CSS 已模块化；时间轴已完成按可见天数与优先级进行密度自适应和二维装箱。
 
 ---
 
@@ -190,8 +190,8 @@ v4: 基本完善（当前）                    → 7 个变更模式，AI 按�
   搜索不支持拼音
 
 ## 测试策略
-  当前：npm run build + 人工验证
-  计划：Playwright smoke test
+  当前：lint + Vitest + build + Playwright E2E + 必要的人工浏览器验证
+  新增功能时按风险补单元测试或 E2E
 ```
 
 ### 不要写的内容
@@ -206,33 +206,36 @@ v4: 基本完善（当前）                    → 7 个变更模式，AI 按�
 
 ## 五、质量保障的最低标准
 
-### 当前有
+### 当前有（2026-09-09）
 
-- `npm run build`（编译 + 类型检查）
-- 人工浏览器验证
+- TypeScript strict + Next.js build 类型检查
+- ESLint 9 + `eslint-config-next`
+- Vitest：utils / memo / storage / migrate / timeline 等单元测试
+- Playwright E2E：smoke、memo、todo archive
+- GitHub Actions：`lint → test → build → deploy`
+- 真实浏览器验证用于时间轴几何、交互和响应式检查
 
-### 建议增加（按优先级）
+### 最低要求
 
-1. **类型安全**：已经有 TypeScript strict mode，继续保持
-2. **构建检查**：`npm run build` 必须在每次修改后通过
-3. **数据迁移测试**：写一个脚本验证 v0→v1→v2 迁移正确
-4. **Lint 规则**：加 `eslint-plugin-react-hooks` 防止 hooks 顺序错误
-5. **Smoke Test**：用 Playwright 录一个"打开→添加任务→搜索→删除"的脚本
+1. 数据/布局纯函数修改必须补或更新 Vitest
+2. UI 主流程修改优先补 Playwright
+3. 每次提交前至少保证 `npm run lint`、`npm test`、`npm run build` 通过
+4. 涉及数据结构时必须验证旧版本 migration、JSON 导入和 Gist 同步兼容
 
 ---
 
-## 六、本项目的数据
+## 六、本项目的数据（历史快照）
 
 ### 代码量变化
 
 ```
 初始（5月27日）    ~2,000 行
 上一轮（6月13日）  ~4,400 行（含 docs）
-当前（7月14日）    ~6,600 行（含 docs）
+2026-07-14 快照    ~6,600 行（含 docs）
 净增长            ~4,600 行
 ```
 
-### 提交统计
+### 提交统计（同一历史快照）
 
 ```
 总提交：27
@@ -251,11 +254,10 @@ v4: 基本完善（当前）                    → 7 个变更模式，AI 按�
 
 ---
 
-## 七、下一步建议
+## 七、下一步建议（基于 2026-09-09 现状）
 
-1. **補测试**：至少给 `mergeItems`、`migrateData`、`syncLinkedItems` 写单元测试（纯函数，最好测）
-2. **拆大文件**：`day-timeline.tsx`（778行）可拆为 `lib/timeline-layout.ts` + `hooks/use-timeline-zoom.ts`；`app/globals.css`（1893行）可按功能模块拆分
-3. **CI 增强**：在 deploy.yml 加 lint 步骤
-4. **监控**：CloudSync 失败时给用户可见的提示（目前控制台静默失败）
-5. **数据恢复**：加一个"从云端恢复"的功能入口（目前只能通过设置面板）
-6. **代码审查**：`lib/storage.ts`（812行）过大，可拆分为 Gist 操作、LocalStorage 操作、迁移逻辑三个模块
+1. **进一步拆时间轴交互**：`day-timeline.tsx` 仍较大，可把缩放/滚动/视口虚拟化抽到 `hooks/use-timeline-zoom.ts`
+2. **补时间轴 E2E**：目前密度规则和碰撞主要由纯函数测试覆盖，可增加 low/medium/high 三档浏览器回归
+3. **同步冲突可视化**：Gist 已按 `updatedAt` 自动合并，可进一步给用户展示“远端合并了哪些条目”
+4. **统计深化**：增加时间投入、部门/联系人、标签趋势等更有工作复盘价值的报表
+5. **月视图 / PWA**：属于体验扩展，不应优先于现有工作流稳定性
