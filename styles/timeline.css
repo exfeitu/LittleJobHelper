@@ -321,13 +321,9 @@
   position: absolute;
   top: 50%;
   height: 0;
-  z-index: 4;
 }
 
-.line-event:has(.line-event-card:hover),
-.line-event:has(.line-event-card:focus-visible) {
-  z-index: 50;
-}
+/* 不给整个事件建立 stacking context：否则同一时间点后渲染条目的连接线会压到其他卡片上。 */
 
 .line-event-top {
   /* 卡片在上方 */;
@@ -343,6 +339,7 @@
   left: 0;
   width: 0;
   height: 0;
+  z-index: 2;
 }
 
 /* 轴线圆点 */
@@ -500,6 +497,7 @@
   color: #183626;
   text-align: left;
   cursor: pointer;
+  z-index: 10;
   transition: transform 0.15s ease, box-shadow 0.15s ease, max-width 0.2s ease, max-height 0.2s ease, z-index 0s;
 }
 
