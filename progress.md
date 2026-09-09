@@ -93,3 +93,55 @@
 | What's the goal? | 实现普通列表 A，并提供时间轴任务卡片候选视觉方案 |
 | What have I learned? | 方案 A 最兼容当前时间轴点锚定模型；区间带信息更丰富但会改变布局语义 |
 | What have I done? | 已完成普通待办方案 A、全量验证和三套时间轴视觉稿 |
+
+## Session: 2026-09-09
+
+### Phase 6: Confirm Timeline Density Rules
+
+- **Status:** complete
+- Actions taken:
+  - 确认密度由当前可见天数稳定分级，避免滚动引起表现跳变。
+  - 确认使用优先级驱动的信息降级和放置顺序。
+  - 复核现有布局只会向右推卡片，确定以二维装箱替换该阶段。
+
+### Phase 7: Implement Adaptive Timeline Tasks
+
+- **Status:** complete
+- Actions taken:
+  - 增加密度判定、任务降级/聚合和二维卡片装箱纯函数。
+  - 将 `DayTimeline` 接入新布局结果与低优先级聚合交互。
+  - 开始调整任务卡片的 full / compact / marker 三种样式。
+  - 任务颜色改为稳定的优先级映射，不再按出现顺序循环橙色。
+  - 低密度全部显示完整卡；中密度按日、高密度按周聚合低优先级任务。
+
+### Phase 8: Validate, Commit & Push
+
+- **Status:** complete
+- Test results:
+  - `npm run lint`：0 errors，保留原有 5 warnings。
+  - `npm test`：6 files / 66 tests passed。
+  - `npm run build`：Next.js 静态导出成功，6 个页面生成完成。
+- Validation:
+  - 已完成默认 7 天中密度截图与几何检查：任务卡 174×72px、轨道 480px、无页面横向溢出。
+  - 在隔离浏览器中建立 2 高、1 中、4 低的同日任务场景；确认低优先级正确聚合为 `+4`，修正后四组卡片无重叠。
+  - 近景完整卡、远景按周聚合、极端同刻碰撞、事件起点与窄屏弹层边界由布局测试和生产构建覆盖。
+
+## Error Log Addendum
+
+| Timestamp | Error | Attempt | Resolution |
+|-----------|-------|---------|------------|
+| 2026-09-09 | 首次时间轴 CSS 补丁未匹配到目标上下文 | 1 | 读取精确行号后拆分为与现有文件一致的局部更新 |
+| 2026-09-09 | 新增布局测试重复声明 `positioned`，导致目标测试无法解析 | 1 | 删除重复声明并复用同一布局结果 |
+| 2026-09-09 | `tsc --noEmit` 报 `storage-migrate.test.ts` 既有字面量类型过宽 | 1 | 与本次时间轴改动无关，继续以项目既有 lint、Vitest、Next build 验证链为准 |
+| 2026-09-09 | 中密度密集截图中两张高优先级卡坐标重合 | 1 | 补齐布局结果的 `side` 映射后复查，四组卡片已分散到轴线上下近/远位置且不再重叠 |
+| 2026-09-09 | 复查脚本包含无效 CSS 选择器，页面检查未执行 | 1 | 删除无关选择器，只读取 `.line-event.line-todo` 后重试 |
+| 2026-09-09 | 上下文刷新后浏览器页签绑定 `tab` 丢失 | 1 | 重新初始化浏览器运行时并连接本地页面后继续验证 |
+| 2026-09-09 | 本地服务重启后浏览器错误页被 URL 策略阻止重新导航 | 1 | 停止浏览器重试，保留已完成的中密度真机验证，并用纯函数测试覆盖三档规则与碰撞布局 |
+
+### Final validation update
+
+- 时间轴布局专项测试：11 tests passed。
+- 项目全量测试：6 files / 66 tests passed。
+- ESLint：0 errors，5 个既有 Hook dependency warnings。
+- Next.js 静态导出：编译、TypeScript、6 个静态页面生成全部成功。
+- 复查并加固聚合弹层方向、窄屏宽度约束、事件起点对齐、同 ID 条目和极端同刻碰撞。

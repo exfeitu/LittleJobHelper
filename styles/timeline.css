@@ -369,7 +369,75 @@
 
 /* 待办卡片 */
 .line-todo-card {
-  border-style: dashed;
+  justify-content: flex-start;
+  border-style: solid;
+  border-left: 4px solid var(--event-color);
+  background: color-mix(in srgb, white 88%, var(--event-color) 12%);
+  box-shadow: 0 8px 20px rgba(110, 130, 100, 0.12);
+}
+
+.line-todo-card .line-event-time {
+  order: 0;
+  visibility: visible;
+  color: var(--event-color);
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.line-todo-card h4 {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.line-todo-display-compact {
+  justify-content: center;
+  padding: 6px 9px;
+  border-left-width: 3px;
+  background: color-mix(in srgb, white 84%, var(--event-color) 16%);
+}
+
+.line-todo-display-compact .line-event-time,
+.line-todo-display-compact .line-todo-meta,
+.line-todo-display-compact .compact-tags {
+  display: none;
+}
+
+.line-todo-display-compact h4 {
+  margin: 0;
+  font-size: 0.8rem;
+}
+
+.line-todo-display-marker {
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 3px 7px;
+  border: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, white 78%, var(--event-color) 22%);
+  box-shadow: none;
+  color: var(--event-color);
+}
+
+.line-todo-display-marker h4 {
+  margin: 0;
+  font-size: 0.78rem;
+}
+
+.line-todo-marker-label {
+  font-size: 0.66rem;
+  color: var(--event-color);
+}
+
+.line-timeline-density-medium .line-todo-display-full .compact-tags,
+.line-timeline-density-high .line-todo-display-full .compact-tags {
+  display: none;
+}
+
+.line-timeline-density-high .line-todo-display-full .line-event-time {
+  display: none;
 }
 
 .line-todo-meta {
@@ -404,13 +472,13 @@
 .line-event-top .line-event-stem {
   bottom: 4px;
   top: auto;
-  height: calc(var(--stack-offset) + var(--lane-height) - var(--card-offset-x, 0px) * 0);
+  height: calc(var(--card-offset-y, 18px) - 4px);
 }
 
 .line-event-bottom .line-event-stem {
   top: 4px;
   bottom: auto;
-  height: calc(var(--stack-offset) + var(--lane-height));
+  height: calc(var(--card-offset-y, 18px) - 4px);
 }
 
 /* 事件卡片 */
@@ -420,9 +488,9 @@
   display: flex;
   flex-direction: column;
   transform: translateX(var(--card-offset-x, 0px));
-  width: max(72px, var(--card-width, 180px));
+  width: var(--card-width, 180px);
   max-width: 320px;
-  height: 140px;
+  height: var(--card-height, 140px);
   overflow: hidden;
   padding: 6px 10px;
   border-radius: 14px;
@@ -435,8 +503,8 @@
   transition: transform 0.15s ease, box-shadow 0.15s ease, max-width 0.2s ease, max-height 0.2s ease, z-index 0s;
 }
 
-.line-event-card:hover,
-.line-event-card:focus-visible {
+.line-event-card:not(.line-todo-card):hover,
+.line-event-card:not(.line-todo-card):focus-visible {
   outline: none;
   z-index: 50;
   transform: translateX(var(--card-offset-x, 0px));
@@ -446,11 +514,11 @@
 }
 
 .line-event-top .line-event-card {
-  bottom: calc(8px + var(--stack-offset) + var(--lane-height));
+  bottom: var(--card-offset-y, 18px);
 }
 
 .line-event-bottom .line-event-card {
-  top: calc(8px + var(--stack-offset) + var(--lane-height));
+  top: var(--card-offset-y, 18px);
 }
 
 .line-event-time {
@@ -486,4 +554,65 @@
 
 .compact-tags {
   margin-top: 4px;
+}
+
+.line-todo-cluster-popover {
+  position: absolute;
+  left: 0;
+  z-index: 70;
+  display: grid;
+  gap: 4px;
+  width: var(--popover-width, 260px);
+  max-height: 260px;
+  overflow: auto;
+  padding: 10px;
+  transform: translateX(var(--popover-offset-x, var(--card-offset-x, 0px)));
+  border: 1px solid rgba(108, 156, 120, 0.22);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 16px 36px rgba(80, 110, 88, 0.24);
+  color: var(--text);
+}
+
+.line-event-top .line-todo-cluster-popover {
+  bottom: calc(var(--card-offset-y, 18px) + var(--card-height, 30px) + 8px);
+}
+
+.line-event-bottom .line-todo-cluster-popover {
+  top: calc(var(--card-offset-y, 18px) + var(--card-height, 30px) + 8px);
+}
+
+.line-todo-cluster-popover > strong {
+  padding: 2px 4px 6px;
+  font-size: 0.8rem;
+}
+
+.line-todo-cluster-popover > button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 38px;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: 9px;
+  background: rgba(120, 150, 129, 0.08);
+  color: var(--text);
+  text-align: left;
+}
+
+.line-todo-cluster-popover > button:hover,
+.line-todo-cluster-popover > button:focus-visible {
+  background: rgba(120, 150, 129, 0.16);
+}
+
+.line-todo-cluster-popover > button span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.line-todo-cluster-popover > button small {
+  flex-shrink: 0;
+  color: var(--muted);
 }

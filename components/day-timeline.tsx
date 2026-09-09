@@ -4,10 +4,6 @@ import { type CSSProperties, useCallback, useEffect, useLayoutEffect, useMemo, u
 import { EventItem, TodoItem } from "@/types";
 import {
   BASE_VISIBLE_DAYS,
-  CARD_HORIZONTAL_GAP,
-  FULL_CARD_MAX_WIDTH,
-  FULL_CARD_MIN_WIDTH,
-  LANE_HEIGHT,
   MAX_SCALE,
   MIN_SCALE,
   PRIORITY_LABEL,
@@ -21,6 +17,9 @@ import {
   eventToTimeline,
   formatClock,
   formatDayLabel,
+  getTimelineDensity,
+  layoutTimelineCards,
+  prepareTimelineItems,
   startOfDay,
   todoToTimeline,
 } from "@/lib/timeline-layout";
@@ -36,16 +35,6 @@ type DayTimelineProps = {
   onScaleChange?: (scale: number) => void;
   scrollToTodayTrigger?: number;
   scrollToDate?: string;
-};
-
-type PositionedItem = TimelineItem & {
-  color: string;
-  stack: number;
-  side: "top" | "bottom";
-  leftPercent: number;
-  widthPercent: number;
-  cardOffsetXPx: number;
-  cardWidthPx: number;
 };
 
 export function DayTimeline({ events, todos = [], linkedTodoTitles = {}, onEventClick, onTodoClick, scale: externalScale, onScaleChange, scrollToTodayTrigger, scrollToDate }: DayTimelineProps) {
@@ -74,6 +63,7 @@ export function DayTimeline({ events, todos = [], linkedTodoTitles = {}, onEvent
   const scrollRef = useRef<HTMLDivElement>(null);
   const initializedRef = useRef(false);
   const [timelineReady, setTimelineReady] = useState(false);
+  const [expandedClusterId, setExpandedClusterId] = useState<string | null>(null);
 
   // 视口虚拟化：只渲染可视区域附近的元素
   const [viewportLeft, setViewportLeft] = useState(0);
@@ -189,8 +179,13 @@ export function DayTimeline({ events, todos = [], linkedTodoTitles = {}, onEvent
   const totalRangeMs = timeEnd - timeOrigin;
 
   const visibleDays = BASE_VISIBLE_DAYS / scale;
+  const timelineDensity = getTimelineDensity(visibleDays);
   const totalDays = timelineDays.length;
   const shellWidth = Math.max((totalDays / visibleDays) * containerWidth, containerWidth);
+  const displayItems = useMemo(
+    () => prepareTimelineItems(allItems, timelineDensity),
+    [allItems, timelineDensity],
+  );
 
   // 缩放后统一调整 scroll 位置（useLayoutEffect 在 DOM 更新后、绘制前执行，消除闪烁）
   useLayoutEffect(() => {
@@ -251,52 +246,32 @@ export function DayTimeline({ events, todos = [], linkedTodoTitles = {}, onEvent
 
   // 不依赖 scale/shellWidth 的稳定计算（lane 分配、颜色、百分比位置）
   const stableItems = useMemo(
-    () => assignLanes(allItems, timeOrigin, totalRangeMs),
-    [allItems, timeOrigin, totalRangeMs],
+    () => assignLanes(displayItems, timeOrigin, totalRangeMs),
+    [displayItems, timeOrigin, totalRangeMs],
   );
 
-  // 仅依赖 shellWidth 的像素计算（缩放时重算，稳定部分不变）
-  const positionedItems = useMemo<PositionedItem[]>(() => {
-    if (!stableItems.length) return [];
-    const laneRights = { top: [] as number[], bottom: [] as number[] };
-
-    return stableItems.map((item) => {
-      const naturalLeftPx = (item.leftPercent / 100) * shellWidth;
-      const naturalWidthPx = Math.max(40, (item.widthPercent / 100) * shellWidth);
-      const cardWidthPx = Math.min(FULL_CARD_MAX_WIDTH, Math.max(FULL_CARD_MIN_WIDTH, naturalWidthPx));
-
-      const sameSideRight = laneRights[item.side][item.stack] ?? -Infinity;
-      const shiftedLeftPx = Math.max(naturalLeftPx, sameSideRight + CARD_HORIZONTAL_GAP);
-      const cardOffsetXPx = shiftedLeftPx - naturalLeftPx;
-
-      laneRights[item.side][item.stack] = shiftedLeftPx + cardWidthPx;
-
-      return {
-        ...item,
-        cardOffsetXPx,
-        cardWidthPx,
-      };
-    });
-  }, [stableItems, shellWidth]);
+  // 按优先级先后做二维装箱，允许卡片围绕时间锚点左右错位并复用纵向区域。
+  const positionedItems = useMemo(
+    () => layoutTimelineCards(stableItems, shellWidth, timelineDensity),
+    [stableItems, shellWidth, timelineDensity],
+  );
 
   // 视口虚拟化：仅保留可见范围内的条目（memoized 避免每帧 filter）
   const visiblePositionedItems = useMemo(() => {
     if (!positionedItems.length) return [];
     return positionedItems.filter((item) => {
-      const itemLeftPx = (item.leftPercent / 100) * shellWidth;
-      const itemRightPx = itemLeftPx + item.cardWidthPx;
-      return itemRightPx >= visibleRange.left && itemLeftPx <= visibleRange.right;
+      const itemRightPx = item.cardLeftPx + item.cardWidthPx;
+      return itemRightPx >= visibleRange.left && item.cardLeftPx <= visibleRange.right;
     });
-  }, [positionedItems, shellWidth, visibleRange]);
+  }, [positionedItems, visibleRange]);
 
   const trackHeight = useMemo(() => {
-    const maxTop = stableItems.reduce((m, e) => (e.side === "top" ? Math.max(m, e.stack) : m), -1);
-    const maxBottom = stableItems.reduce((m, e) => (e.side === "bottom" ? Math.max(m, e.stack) : m), -1);
-    // 卡片需要足够纵向空间：stack 层高 + 卡片高度(~150px) + 边距
-    const cardClearance = 160;
-    const needed = (Math.max(maxTop, maxBottom) + 1) * LANE_HEIGHT * 2 + cardClearance * 2 + TRACK_PADDING * 2;
-    return Math.max(480, needed);
-  }, [stableItems]);
+    const maxExtent = positionedItems.reduce(
+      (max, item) => Math.max(max, item.cardOffsetYPx + item.cardHeightPx),
+      0,
+    );
+    return Math.max(480, (maxExtent + TRACK_PADDING) * 2);
+  }, [positionedItems]);
 
   // 按周聚合计数（以周一为周起始对齐）
   const weekBrackets = useMemo(() => buildWeekBrackets(allItems), [allItems]);
@@ -453,7 +428,7 @@ export function DayTimeline({ events, todos = [], linkedTodoTitles = {}, onEvent
   );
 
   return (
-    <div className="line-timeline" suppressHydrationWarning>
+    <div className={`line-timeline line-timeline-density-${timelineDensity}`} suppressHydrationWarning>
       {!hasExternalToolbar && (
         <div className="line-timeline-toolbar">
           <button className="axis-zoom-button" onClick={() => setScale(Math.min(MAX_SCALE, scale + SCALE_STEP))} type="button">＋</button>
@@ -520,19 +495,33 @@ export function DayTimeline({ events, todos = [], linkedTodoTitles = {}, onEvent
             {/* 统一渲染时间轴条目（事件 + 待办）—— 使用 memoized 可见条目 */}
             {visiblePositionedItems.map((item) => {
               const isTodo = item.kind === "todo";
+              const clusterTodos = item.clusterTodos ?? [];
+              const isCluster = clusterTodos.length > 0;
+              const isExpandedCluster = expandedClusterId === item.id;
+              const anchorPx = (item.leftPercent / 100) * shellWidth;
+              const popoverWidthPx = Math.min(260, Math.max(120, containerWidth - TRACK_PADDING * 2));
+              const popoverLeftPx = Math.min(
+                viewportLeft + containerWidth - TRACK_PADDING - popoverWidthPx,
+                Math.max(viewportLeft + TRACK_PADDING, item.cardLeftPx),
+              );
               const style = {
                 left: `${item.leftPercent}%`,
                 width: `${item.widthPercent}%`,
                 "--event-color": item.color,
-                "--stack-offset": `${item.stack * LANE_HEIGHT}px`,
                 "--card-offset-x": `${item.cardOffsetXPx}px`,
+                "--card-offset-y": `${item.cardOffsetYPx}px`,
                 "--card-width": `${item.cardWidthPx}px`,
-                "--lane-height": `${LANE_HEIGHT}px`,
+                "--card-height": `${item.cardHeightPx}px`,
+                "--popover-offset-x": `${popoverLeftPx - anchorPx}px`,
+                "--popover-width": `${popoverWidthPx}px`,
               } as CSSProperties;
 
               const handleClick = () => {
-                if (isTodo && item.todoData && onTodoClick) {
-                  onTodoClick(item.todoData);
+                if (isCluster && clusterTodos.length > 1) {
+                  setExpandedClusterId((current) => (current === item.id ? null : item.id));
+                } else if (isTodo && onTodoClick) {
+                  const targetTodo = clusterTodos[0] ?? item.todoData;
+                  if (targetTodo) onTodoClick(targetTodo);
                 } else if (!isTodo && item.eventData && onEventClick) {
                   onEventClick(item.eventData);
                 }
@@ -549,35 +538,54 @@ export function DayTimeline({ events, todos = [], linkedTodoTitles = {}, onEvent
                     <span className="line-event-stem" />
                   </div>
                   <button
-                    className={`line-event-card ${isTodo ? "line-todo-card" : ""}`}
+                    className={`line-event-card ${isTodo ? `line-todo-card line-todo-display-${item.displayMode ?? "full"}` : ""}`}
                     type="button"
                     onClick={handleClick}
+                    aria-label={isCluster ? `${clusterTodos.length} 个低优先级待办` : undefined}
+                    aria-expanded={isCluster && clusterTodos.length > 1 ? isExpandedCluster : undefined}
                   >
-                    <div className="line-event-time">
-                      {isTodo ? "📌 待办" : `${formatClock(item.startTime)} — ${formatClock(item.endTime)}`}
-                    </div>
-                    {!isTodo && item.eventData?.linkedTodoIds?.length ? (
-                      <div className="link-badge-group link-badge-group-event">
-                        {item.eventData.linkedTodoIds.filter((id) => linkedTodoTitles[id]).map((id) => (
-                          <div key={id} className="link-badge link-badge-event">关联待办：{linkedTodoTitles[id]}</div>
-                        ))}
-                      </div>
-                    ) : null}
-                    <h4>{item.title}</h4>
-                    {isTodo && item.todoData ? (
-                      <div className="line-todo-meta">
-                        <span className={`line-todo-priority priority-${item.todoData.priority}`}>
-                          {PRIORITY_LABEL[item.todoData.priority] ?? item.todoData.priority}
-                        </span>
-                        <span className="line-todo-status">{STATUS_LABEL[item.todoData.status] ?? item.todoData.status}</span>
-                      </div>
+                    {isTodo && item.displayMode === "marker" ? (
+                      <><h4>{item.title}</h4><span className="line-todo-marker-label">低</span></>
                     ) : (
-                      <p>{item.detail}</p>
+                      <>
+                        <div className="line-event-time">
+                          {isTodo ? "待办" : `${formatClock(item.startTime)} — ${formatClock(item.endTime)}`}
+                        </div>
+                        {!isTodo && item.eventData?.linkedTodoIds?.length ? (
+                          <div className="link-badge-group link-badge-group-event">
+                            {item.eventData.linkedTodoIds.filter((id) => linkedTodoTitles[id]).map((id) => (
+                              <div key={id} className="link-badge link-badge-event">关联待办：{linkedTodoTitles[id]}</div>
+                            ))}
+                          </div>
+                        ) : null}
+                        <h4>{item.title}</h4>
+                        {isTodo && item.todoData ? (
+                          <div className="line-todo-meta">
+                            <span className={`line-todo-priority priority-${item.todoData.priority}`}>
+                              {PRIORITY_LABEL[item.todoData.priority] ?? item.todoData.priority}
+                            </span>
+                            <span className="line-todo-status">{STATUS_LABEL[item.todoData.status] ?? item.todoData.status}</span>
+                          </div>
+                        ) : (
+                          <p>{item.detail}</p>
+                        )}
+                        <div className="tag-row compact-tags">
+                          {item.tags.map((tag) => <span key={tag} className="tag chip">{tag}</span>)}
+                        </div>
+                      </>
                     )}
-                    <div className="tag-row compact-tags">
-                      {item.tags.map((tag) => <span key={tag} className="tag chip">{tag}</span>)}
-                    </div>
                   </button>
+                  {isCluster && clusterTodos.length > 1 && isExpandedCluster ? (
+                    <div className="line-todo-cluster-popover" role="dialog" aria-label="低优先级待办列表" onMouseDown={(event) => event.stopPropagation()}>
+                      <strong>{clusterTodos.length} 个低优先级待办</strong>
+                      {clusterTodos.map((todo) => (
+                        <button key={todo.id} type="button" onClick={() => { setExpandedClusterId(null); onTodoClick?.(todo); }}>
+                          <span>{todo.title}</span>
+                          <small>{todo.dueDate ? formatClock(todo.dueDate) : "未设时间"}</small>
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
                 </article>
               );
             })}
