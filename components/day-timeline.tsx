@@ -265,13 +265,8 @@ export function DayTimeline({ events, todos = [], linkedTodoTitles = {}, onEvent
     });
   }, [positionedItems, visibleRange]);
 
-  const trackHeight = useMemo(() => {
-    const maxExtent = positionedItems.reduce(
-      (max, item) => Math.max(max, item.cardOffsetYPx + item.cardHeightPx),
-      0,
-    );
-    return Math.max(480, (maxExtent + TRACK_PADDING) * 2);
-  }, [positionedItems]);
+  // 时间轴保持固定的普通高度；任务密集时依靠聚合和二维错位，不再把整页纵向撑高。
+  const trackHeight = 360;
 
   // 按周聚合计数（以周一为周起始对齐）
   const weekBrackets = useMemo(() => buildWeekBrackets(allItems), [allItems]);
