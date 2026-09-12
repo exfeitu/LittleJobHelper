@@ -5,6 +5,8 @@ on:
     branches: [master]
   workflow_dispatch:
 
+# Manual redeploy marker: 2026-09-12
+
 permissions:
   contents: read
   pages: write
