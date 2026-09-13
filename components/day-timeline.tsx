@@ -9,7 +9,6 @@ import {
   PRIORITY_LABEL,
   SCALE_STEP,
   STATUS_LABEL,
-  TRACK_PADDING,
   TimelineItem,
   TASK_RAIL_PRIORITIES,
   assignLanes,
