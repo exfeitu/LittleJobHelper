@@ -33,6 +33,17 @@ export const STATUS_LABEL: Record<string, string> = {
 
 export type TimelineDensity = "low" | "medium" | "high";
 export type TimelineDisplayMode = "full" | "compact" | "marker";
+export const TASK_RAIL_PRIORITIES: Priority[] = ["high", "medium", "low"];
+
+export type TimelineTaskRailItem = {
+  id: string;
+  priority: Priority;
+  bucketStartMs: number;
+  bucketEndMs: number;
+  title: string;
+  todos: TodoItem[];
+  color: string;
+};
 
 /** 统一的时间轴条目 */
 export type TimelineItem = {
@@ -79,6 +90,70 @@ export function getTimelineDensity(visibleDays: number): TimelineDensity {
   if (visibleDays <= 2) return "low";
   if (visibleDays <= 10) return "medium";
   return "high";
+}
+
+function getTaskRailBucketBounds(value: string, density: TimelineDensity) {
+  const start = new Date(value);
+  start.setSeconds(0, 0);
+
+  if (density === "low") {
+    start.setMinutes(0);
+    start.setHours(Math.floor(start.getHours() / 2) * 2);
+    const end = new Date(start);
+    end.setHours(end.getHours() + 2);
+    return { startMs: start.getTime(), endMs: end.getTime() };
+  }
+
+  start.setHours(0, 0, 0, 0);
+  if (density === "medium") {
+    const end = new Date(start);
+    end.setDate(end.getDate() + 1);
+    return { startMs: start.getTime(), endMs: end.getTime() };
+  }
+
+  const dayFromMonday = (start.getDay() + 6) % 7;
+  start.setDate(start.getDate() - dayFromMonday);
+  const end = new Date(start);
+  end.setDate(end.getDate() + 7);
+  return { startMs: start.getTime(), endMs: end.getTime() };
+}
+
+export function buildTimelineTaskRailItems(
+  todos: TodoItem[],
+  density: TimelineDensity,
+): TimelineTaskRailItem[] {
+  const groups = new Map<string, TimelineTaskRailItem>();
+
+  todos
+    .filter((todo) => todo.status !== "cancelled")
+    .forEach((todo) => {
+      const timelineItem = todoToTimeline(todo);
+      const { startMs, endMs } = getTaskRailBucketBounds(timelineItem.startTime, density);
+      const key = `${todo.priority}:${startMs}`;
+      const existing = groups.get(key);
+
+      if (existing) {
+        existing.todos.push(todo);
+        existing.title = `${existing.todos.length} 项`;
+        return;
+      }
+
+      groups.set(key, {
+        id: `task-rail-${density}-${key}`,
+        priority: todo.priority,
+        bucketStartMs: startMs,
+        bucketEndMs: endMs,
+        title: todo.title,
+        todos: [todo],
+        color: TODO_PRIORITY_COLORS[todo.priority],
+      });
+    });
+
+  return [...groups.values()].sort((a, b) => {
+    const timeDiff = a.bucketStartMs - b.bucketStartMs;
+    if (timeDiff !== 0) return timeDiff;
+    return TASK_RAIL_PRIORITIES.indexOf(a.priority) - TASK_RAIL_PRIORITIES.indexOf(b.priority);
+  });
 }
 
 function formatLocalDate(date: Date): string {
@@ -206,6 +281,7 @@ export function layoutTimelineCards(
   items: StableItem[],
   shellWidth: number,
   density: TimelineDensity,
+  sideMode: "both" | "bottom" = "both",
 ): PositionedTimelineItem[] {
   if (!items.length || shellWidth <= 0) return [];
 
@@ -228,11 +304,10 @@ export function layoutTimelineCards(
     const horizontalOffsets = item.kind === "event"
       ? [0, -metrics.width / 2, -metrics.width + 12, -metrics.width * 0.25, -metrics.width * 0.75]
       : [-metrics.width / 2, 0, -metrics.width + 12, -metrics.width * 0.25, -metrics.width * 0.75];
-    const preferredSide = item.side;
-    const sideCandidates: Array<"top" | "bottom"> = [
-      preferredSide,
-      preferredSide === "top" ? "bottom" : "top",
-    ];
+    const preferredSide = sideMode === "bottom" ? "bottom" : item.side;
+    const sideCandidates: Array<"top" | "bottom"> = sideMode === "bottom"
+      ? ["bottom"]
+      : [preferredSide, preferredSide === "top" ? "bottom" : "top"];
 
     let best:
       | { side: "top" | "bottom"; left: number; near: number; score: number }
