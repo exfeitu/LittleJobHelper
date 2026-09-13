@@ -20,6 +20,7 @@ test("待办归档：完成后移入归档并可恢复", async ({ page }) => {
   await expect(page.getByText("未完成 1 项")).toBeVisible();
 
   // 勾选并批量标记完成
+  await page.getByRole("button", { name: "批量选择" }).click();
   await page.getByLabel(`选择 ${title}`).check();
   await page.getByRole("button", { name: "标记完成" }).click();
 

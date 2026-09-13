@@ -39,7 +39,7 @@ npm test        # vitest 单元测试
 | 6 | 不改 `next.config.mjs` 的 `output` | 会导致部署失败 |
 | 7 | 不直接操作 LocalStorage | 必须通过 `lib/storage.ts` |
 | 8 | 不在组件中直接修改 events/todos 数组 | 必须经 `setData()` + `syncLinkedItems()` |
-| 9 | 直接执行任务不提供确认框 | 保持高效开发 |
+| 9 | 在已授权范围内直接执行，不重复确认；缺少关键输入或涉及未授权的外部发布/付费/破坏性动作时才确认 | 高效执行且不扩大授权 |
 | 10 | 新增/修改数据字段时必须同步 migration、导入导出和 Gist 数据结构 | 保持旧数据与多端同步兼容 |
 
 ## 关键文件速查
