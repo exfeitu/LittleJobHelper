@@ -11,7 +11,9 @@ import {
   STATUS_LABEL,
   TRACK_PADDING,
   TimelineItem,
+  TASK_RAIL_PRIORITIES,
   assignLanes,
+  buildTimelineTaskRailItems,
   buildWeekBrackets,
   endOfDay,
   eventToTimeline,
@@ -19,7 +21,6 @@ import {
   formatDayLabel,
   getTimelineDensity,
   layoutTimelineCards,
-  prepareTimelineItems,
   startOfDay,
   todoToTimeline,
 } from "@/lib/timeline-layout";
@@ -182,9 +183,13 @@ export function DayTimeline({ events, todos = [], linkedTodoTitles = {}, onEvent
   const timelineDensity = getTimelineDensity(visibleDays);
   const totalDays = timelineDays.length;
   const shellWidth = Math.max((totalDays / visibleDays) * containerWidth, containerWidth);
-  const displayItems = useMemo(
-    () => prepareTimelineItems(allItems, timelineDensity),
-    [allItems, timelineDensity],
+  const eventItems = useMemo(
+    () => events.map(eventToTimeline),
+    [events],
+  );
+  const taskRailItems = useMemo(
+    () => buildTimelineTaskRailItems(todos, timelineDensity),
+    [todos, timelineDensity],
   );
 
   // 缩放后统一调整 scroll 位置（useLayoutEffect 在 DOM 更新后、绘制前执行，消除闪烁）
@@ -246,15 +251,23 @@ export function DayTimeline({ events, todos = [], linkedTodoTitles = {}, onEvent
 
   // 不依赖 scale/shellWidth 的稳定计算（lane 分配、颜色、百分比位置）
   const stableItems = useMemo(
-    () => assignLanes(displayItems, timeOrigin, totalRangeMs),
-    [displayItems, timeOrigin, totalRangeMs],
+    () => assignLanes(eventItems, timeOrigin, totalRangeMs),
+    [eventItems, timeOrigin, totalRangeMs],
   );
 
-  // 按优先级先后做二维装箱，允许卡片围绕时间锚点左右错位并复用纵向区域。
+  // 工作记录只放在主轴下方；任务使用上方固定优先级轨道，不再参与二维装箱。
   const positionedItems = useMemo(
-    () => layoutTimelineCards(stableItems, shellWidth, timelineDensity),
+    () => layoutTimelineCards(stableItems, shellWidth, timelineDensity, "bottom"),
     [stableItems, shellWidth, timelineDensity],
   );
+
+  const visibleTaskRailItems = useMemo(() => {
+    return taskRailItems.filter((item) => {
+      const leftPx = totalRangeMs > 0 ? ((item.bucketStartMs - timeOrigin) / totalRangeMs) * shellWidth : 0;
+      const rightPx = totalRangeMs > 0 ? ((item.bucketEndMs - timeOrigin) / totalRangeMs) * shellWidth : leftPx;
+      return rightPx >= visibleRange.left && leftPx <= visibleRange.right;
+    });
+  }, [taskRailItems, timeOrigin, totalRangeMs, shellWidth, visibleRange]);
 
   // 视口虚拟化：仅保留可见范围内的条目（memoized 避免每帧 filter）
   const visiblePositionedItems = useMemo(() => {
@@ -487,18 +500,69 @@ export function DayTimeline({ events, todos = [], linkedTodoTitles = {}, onEvent
               return <div key={day} className="line-day-chip" style={{ left: `${dayLeftPercent}%` }}>{formatDayLabel(day)}</div>;
             })}
 
-            {/* 统一渲染时间轴条目（事件 + 待办）—— 使用 memoized 可见条目 */}
+            {/* 固定高/中/低任务轨道：同一时间桶内聚合，不再用浮动大卡片。 */}
+            <div className="timeline-task-rails" aria-label="待办优先级时间轨道">
+              {TASK_RAIL_PRIORITIES.map((priority) => (
+                <div key={priority} className={`timeline-task-rail timeline-task-rail-${priority}`}>
+                  <span className="timeline-task-rail-label">{PRIORITY_LABEL[priority]}优先</span>
+                </div>
+              ))}
+              {visibleTaskRailItems.map((railItem) => {
+                const leftPercent = totalRangeMs > 0
+                  ? ((railItem.bucketStartMs - timeOrigin) / totalRangeMs) * 100
+                  : 0;
+                const rawWidthPercent = totalRangeMs > 0
+                  ? ((railItem.bucketEndMs - railItem.bucketStartMs) / totalRangeMs) * 100
+                  : 0;
+                const widthPx = Math.max(42, (rawWidthPercent / 100) * shellWidth - 6);
+                const widthPercent = shellWidth > 0 ? (widthPx / shellWidth) * 100 : rawWidthPercent;
+                const isExpanded = expandedClusterId === railItem.id;
+                const firstTodo = railItem.todos[0];
+                const railStyle = {
+                  left: `${leftPercent}%`,
+                  width: `${widthPercent}%`,
+                  "--event-color": railItem.color,
+                } as CSSProperties;
+
+                return (
+                  <article
+                    key={railItem.id}
+                    className={`timeline-task-bucket timeline-task-bucket-${railItem.priority}`}
+                    style={railStyle}
+                  >
+                    <button
+                      type="button"
+                      className="timeline-task-pill"
+                      onClick={() => {
+                        if (railItem.todos.length === 1) {
+                          onTodoClick?.(firstTodo);
+                        } else {
+                          setExpandedClusterId((current) => current === railItem.id ? null : railItem.id);
+                        }
+                      }}
+                      aria-expanded={railItem.todos.length > 1 ? isExpanded : undefined}
+                    >
+                      <strong>{railItem.todos.length > 1 ? `${railItem.todos.length} 项` : railItem.title}</strong>
+                      <span>{railItem.todos.length > 1 ? "点击展开" : STATUS_LABEL[firstTodo.status] ?? firstTodo.status}</span>
+                    </button>
+                    {railItem.todos.length > 1 && isExpanded ? (
+                      <div className="timeline-task-popover" role="dialog" aria-label={`${PRIORITY_LABEL[railItem.priority]}优先级待办`} onMouseDown={(event) => event.stopPropagation()}>
+                        <strong>{railItem.todos.length} 个{PRIORITY_LABEL[railItem.priority]}优先级待办</strong>
+                        {railItem.todos.map((todo) => (
+                          <button key={todo.id} type="button" onClick={() => { setExpandedClusterId(null); onTodoClick?.(todo); }}>
+                            <span>{todo.title}</span>
+                            <small>{todo.dueDate ? formatClock(todo.dueDate) : "未设时间"}</small>
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                  </article>
+                );
+              })}
+            </div>
+
+            {/* 工作记录仅放在主轴下方，保持稳定卡片视觉。 */}
             {visiblePositionedItems.map((item) => {
-              const isTodo = item.kind === "todo";
-              const clusterTodos = item.clusterTodos ?? [];
-              const isCluster = clusterTodos.length > 0;
-              const isExpandedCluster = expandedClusterId === item.id;
-              const anchorPx = (item.leftPercent / 100) * shellWidth;
-              const popoverWidthPx = Math.min(260, Math.max(120, containerWidth - TRACK_PADDING * 2));
-              const popoverLeftPx = Math.min(
-                viewportLeft + containerWidth - TRACK_PADDING - popoverWidthPx,
-                Math.max(viewportLeft + TRACK_PADDING, item.cardLeftPx),
-              );
               const style = {
                 left: `${item.leftPercent}%`,
                 width: `${item.widthPercent}%`,
@@ -507,80 +571,39 @@ export function DayTimeline({ events, todos = [], linkedTodoTitles = {}, onEvent
                 "--card-offset-y": `${item.cardOffsetYPx}px`,
                 "--card-width": `${item.cardWidthPx}px`,
                 "--card-height": `${item.cardHeightPx}px`,
-                "--popover-offset-x": `${popoverLeftPx - anchorPx}px`,
-                "--popover-width": `${popoverWidthPx}px`,
               } as CSSProperties;
-
-              const handleClick = () => {
-                if (isCluster && clusterTodos.length > 1) {
-                  setExpandedClusterId((current) => (current === item.id ? null : item.id));
-                } else if (isTodo && onTodoClick) {
-                  const targetTodo = clusterTodos[0] ?? item.todoData;
-                  if (targetTodo) onTodoClick(targetTodo);
-                } else if (!isTodo && item.eventData && onEventClick) {
-                  onEventClick(item.eventData);
-                }
-              };
 
               return (
                 <article
-                  key={`${item.kind}-${item.id}`}
-                  className={`line-event line-event-${item.side} ${isTodo ? "line-todo" : ""}`}
+                  key={`event-${item.id}`}
+                  className="line-event line-event-bottom"
                   style={style}
                 >
                   <div className="line-event-axis-group">
-                    <span className={`line-event-point ${isTodo ? "line-todo-point" : ""}`} />
+                    <span className="line-event-point" />
                     <span className="line-event-stem" />
                   </div>
                   <button
-                    className={`line-event-card ${isTodo ? `line-todo-card line-todo-display-${item.displayMode ?? "full"}` : ""}`}
+                    className="line-event-card"
                     type="button"
-                    onClick={handleClick}
-                    aria-label={isCluster ? `${clusterTodos.length} 个低优先级待办` : undefined}
-                    aria-expanded={isCluster && clusterTodos.length > 1 ? isExpandedCluster : undefined}
+                    onClick={() => item.eventData && onEventClick?.(item.eventData)}
                   >
-                    {isTodo && item.displayMode === "marker" ? (
-                      <><h4>{item.title}</h4><span className="line-todo-marker-label">低</span></>
-                    ) : (
-                      <>
-                        <div className="line-event-time">
-                          {isTodo ? "待办" : `${formatClock(item.startTime)} — ${formatClock(item.endTime)}`}
-                        </div>
-                        {!isTodo && item.eventData?.linkedTodoIds?.length ? (
-                          <div className="link-badge-group link-badge-group-event">
-                            {item.eventData.linkedTodoIds.filter((id) => linkedTodoTitles[id]).map((id) => (
-                              <div key={id} className="link-badge link-badge-event">关联待办：{linkedTodoTitles[id]}</div>
-                            ))}
-                          </div>
-                        ) : null}
-                        <h4>{item.title}</h4>
-                        {isTodo && item.todoData ? (
-                          <div className="line-todo-meta">
-                            <span className={`line-todo-priority priority-${item.todoData.priority}`}>
-                              {PRIORITY_LABEL[item.todoData.priority] ?? item.todoData.priority}
-                            </span>
-                            <span className="line-todo-status">{STATUS_LABEL[item.todoData.status] ?? item.todoData.status}</span>
-                          </div>
-                        ) : (
-                          <p>{item.detail}</p>
-                        )}
-                        <div className="tag-row compact-tags">
-                          {item.tags.map((tag) => <span key={tag} className="tag chip">{tag}</span>)}
-                        </div>
-                      </>
-                    )}
-                  </button>
-                  {isCluster && clusterTodos.length > 1 && isExpandedCluster ? (
-                    <div className="line-todo-cluster-popover" role="dialog" aria-label="低优先级待办列表" onMouseDown={(event) => event.stopPropagation()}>
-                      <strong>{clusterTodos.length} 个低优先级待办</strong>
-                      {clusterTodos.map((todo) => (
-                        <button key={todo.id} type="button" onClick={() => { setExpandedClusterId(null); onTodoClick?.(todo); }}>
-                          <span>{todo.title}</span>
-                          <small>{todo.dueDate ? formatClock(todo.dueDate) : "未设时间"}</small>
-                        </button>
-                      ))}
+                    <div className="line-event-time">
+                      {formatClock(item.startTime)} — {formatClock(item.endTime)}
                     </div>
-                  ) : null}
+                    {item.eventData?.linkedTodoIds?.length ? (
+                      <div className="link-badge-group link-badge-group-event">
+                        {item.eventData.linkedTodoIds.filter((id) => linkedTodoTitles[id]).map((id) => (
+                          <div key={id} className="link-badge link-badge-event">关联待办：{linkedTodoTitles[id]}</div>
+                        ))}
+                      </div>
+                    ) : null}
+                    <h4>{item.title}</h4>
+                    <p>{item.detail}</p>
+                    <div className="tag-row compact-tags">
+                      {item.tags.map((tag) => <span key={tag} className="tag chip">{tag}</span>)}
+                    </div>
+                  </button>
                 </article>
               );
             })}
