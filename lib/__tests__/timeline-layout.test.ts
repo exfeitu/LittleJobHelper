@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   assignLanes,
+  buildTimelineTaskRailItems,
   buildWeekBrackets,
   getTimelineDensity,
   layoutTimelineCards,
@@ -164,6 +165,40 @@ describe("timeline density", () => {
     expect(mediumLayout?.cardWidthPx).toBeLessThan(highLayout?.cardWidthPx ?? 0);
     expect(positioned.every((entry) => entry.cardLeftPx >= 0)).toBe(true);
     expect(new Set(positioned.map((entry) => `${entry.side}:${entry.cardOffsetYPx}`)).size).toBe(2);
+  });
+
+  it("固定任务轨道按近景2小时、中景1天、远景1周稳定分桶", () => {
+    const source = [
+      todo("high-a", "high", "2026-01-05T09:00:00"),
+      todo("high-b", "high", "2026-01-05T09:30:00"),
+      todo("medium", "medium", "2026-01-05T16:00:00"),
+      todo("low", "low", "2026-01-08T12:00:00"),
+    ];
+
+    const low = buildTimelineTaskRailItems(source, "low");
+    expect(low.find((entry) => entry.priority === "high")?.todos).toHaveLength(2);
+    expect(low.find((entry) => entry.priority === "high")?.bucketEndMs
+      - (low.find((entry) => entry.priority === "high")?.bucketStartMs ?? 0)).toBe(2 * 3600000);
+
+    const medium = buildTimelineTaskRailItems(source, "medium");
+    expect(medium.filter((entry) => entry.priority === "high")).toHaveLength(1);
+    expect(medium.find((entry) => entry.priority === "high")?.todos).toHaveLength(2);
+
+    const high = buildTimelineTaskRailItems(source, "high");
+    expect(high.filter((entry) => entry.priority === "high")).toHaveLength(1);
+    expect(high.find((entry) => entry.priority === "low")).toBeDefined();
+  });
+
+  it("工作记录可强制只布局在主轴下方", () => {
+    const stable = assignLanes(
+      [item("event-a", 9), item("event-b", 9.25), item("event-c", 9.5)],
+      ORIGIN,
+      DAY_MS,
+    );
+    const positioned = layoutTimelineCards(stable, 1000, "medium", "bottom");
+    expect(positioned).toHaveLength(3);
+    expect(positioned.every((entry) => entry.side === "bottom")).toBe(true);
+    expect(positioned.every((entry) => entry.cardHeightPx <= 82)).toBe(true);
   });
 
   it("密集同刻任务没有矩形重叠，事件仍从真实开始点向右展开", () => {
