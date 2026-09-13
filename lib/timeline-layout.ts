@@ -17,7 +17,7 @@ export const TODO_PRIORITY_COLORS: Record<Priority, string> = {
   low: "#789681",
 };
 export const FULL_CARD_MIN_WIDTH = 60;
-export const FULL_CARD_MAX_WIDTH = 320;
+export const FULL_CARD_MAX_WIDTH = 260;
 export const CARD_HORIZONTAL_GAP = 6;
 export const LANE_HEIGHT = 108;
 export const TRACK_PADDING = 32;
@@ -235,9 +235,15 @@ function getCardMetrics(
   const availableWidth = Math.max(56, shellWidth - TRACK_PADDING * 2);
 
   if (item.kind === "event") {
+    const preferredWidth = density === "low" ? 220 : density === "medium" ? 190 : 160;
+    const preferredHeight = density === "low" ? 82 : density === "medium" ? 76 : 70;
     return {
-      width: Math.min(availableWidth, FULL_CARD_MAX_WIDTH, Math.max(FULL_CARD_MIN_WIDTH, naturalWidthPx)),
-      height: 140,
+      width: Math.min(
+        availableWidth,
+        FULL_CARD_MAX_WIDTH,
+        Math.max(FULL_CARD_MIN_WIDTH, preferredWidth, Math.min(naturalWidthPx, FULL_CARD_MAX_WIDTH)),
+      ),
+      height: preferredHeight,
     };
   }
 
