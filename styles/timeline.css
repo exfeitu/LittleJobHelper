@@ -641,7 +641,7 @@
 .timeline-task-rail-label {
   position: sticky;
   left: 10px;
-  z-index: 2;
+  z-index: 30;
   display: inline-flex;
   align-items: center;
   height: 24px;
@@ -719,7 +719,7 @@
   display: grid;
   gap: 4px;
   width: min(280px, calc(100vw - 48px));
-  max-height: 260px;
+  max-height: 150px;
   overflow: auto;
   padding: 9px;
   border: 1px solid rgba(108, 156, 120, 0.2);
