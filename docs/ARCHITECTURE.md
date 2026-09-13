@@ -18,7 +18,7 @@ styles/                     # CSS 按功能模块拆分（顺序即级联顺序�
   modal.css                 # 模态弹窗、各面板、按钮
 components/
   app-header.tsx            # 三页共用顶部导航栏（含同步状态指示）
-  day-timeline.tsx          # 横向时间轴（缩放、虚拟化、固定任务轨道、工作记录卡）
+  day-timeline.tsx          # 横向时间轴（缩放、虚拟化、轻量任务节点、工作记录时间条）
   diary-timeline.tsx        # 文字日记时间轴
   search-panel.tsx          # 搜索结果（命中高亮）
   todo-tree.tsx             # 递归待办树（紧凑摘要、详情展开、批量选择）
@@ -47,7 +47,7 @@ lib/
   storage-local.ts          # LocalStorage、自定义标签、JSON 导入导出
   storage-gist.ts           # Gist 云同步、同步状态
   utils.ts                  # 纯函数：syncLinkedItems、树构建、格式化、拼音、genId
-  timeline-layout.ts        # 时间轴纯布局逻辑（任务分桶、事件卡布局、lane/周聚合）
+  timeline-layout.ts        # 时间轴纯布局逻辑（任务分桶、工作记录时间条 lane、周聚合）
   memo.ts                   # 备忘录纯函数（正文转文本、搜索、排序、进度）
   constants.ts              # 共享常量（BASE_TAGS）
   sample-data.ts            # 示例数据（当前未使用，保留作参考）
@@ -153,19 +153,20 @@ Memo 操作 → setMemos()（独立撤销历史）──────────
 - 保存时合并预设 + 自定义为 `tags: string[]`，无标签默认 `["其他"]`
 - 自定义标签存 LocalStorage + 云端同步
 
-## 时间轴缩放与稳定轨道
+## 时间轴缩放与原生时间表达
 
 - **公式**：`visibleDays = BASE_VISIBLE_DAYS / scale`（BASE_VISIBLE_DAYS = 1）
 - **范围**：scale 0.03（~33 天）到 24（~1 小时）
 - **密度分级**：`visibleDays <= 2` 为 low，`<= 10` 为 medium，`> 10` 为 high
-- **任务/记录分区**：待办固定在主轴上方的高/中/低三条优先级轨道；工作记录只在主轴下方显示摘要卡，两类内容不再互相避让
-- **稳定任务分桶**：low 密度按 2 小时、medium 按天、high 按周分桶；同优先级同时间桶只显示一个短标签，多项任务点击后展开列表
-- **工作记录卡**：卡片保持真实时间锚点，按密度控制在约 160–220px 宽、70–82px 高；仅在下方做有限二维避让，避免整条时间轴纵向膨胀
+- **任务/记录分区**：待办固定在主轴上方的高/中/低三行；工作记录只在主轴下方，两类内容不再互相避让
+- **轻量任务节点**：low 密度按 2 小时、medium 按天、high 按周分桶；节点使用桶内最早任务的真实时间作为锚点，单项显示标题，多项显示数量并点击展开
+- **工作记录时间条**：layoutTimelineEventStrips() 保留真实开始位置和真实持续时长；常驻信息仅为开始时间、标题和关联数，持续时间由底部细线表达
+- **冲突处理**：工作记录标题只向下分 lane，不再横向漂移、拉长连接线或显示常驻详情卡；最多使用 5 条可见 lane
 - **固定高度**：时间轴保持 360px，不随任务数量无限增高
 - **光标中心缩放**：RAF 批处理 + useLayoutEffect 同步 scrollLeft
 - **视口虚拟化**：仅渲染可见范围 ±0.5 屏幕宽的元素
 - **拖拽平移**：鼠标左键按住拖动
-- **布局逻辑**：`lib/timeline-layout.ts` 保持纯函数，覆盖任务分桶、事件卡布局、lane 与周计数，便于单测
+- **布局逻辑**：`lib/timeline-layout.ts` 保持纯函数，覆盖任务分桶、真实时间条布局、lane 与周计数，便于单测
 
 ## 数据版本迁移
 

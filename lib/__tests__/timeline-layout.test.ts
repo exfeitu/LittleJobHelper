@@ -5,10 +5,11 @@ import {
   buildWeekBrackets,
   getTimelineDensity,
   layoutTimelineCards,
+  layoutTimelineEventStrips,
   prepareTimelineItems,
   todoToTimeline,
 } from "@/lib/timeline-layout";
-import type { TodoItem } from "@/types";
+import type { EventItem, TodoItem } from "@/types";
 
 const ORIGIN = new Date("2026-01-01T00:00:00").getTime();
 const DAY_MS = 86400000;
@@ -187,6 +188,44 @@ describe("timeline density", () => {
     const high = buildTimelineTaskRailItems(source, "high");
     expect(high.filter((entry) => entry.priority === "high")).toHaveLength(1);
     expect(high.find((entry) => entry.priority === "low")).toBeDefined();
+  });
+
+  it("任务节点使用真实任务时间作为锚点，而不是时间桶起点", () => {
+    const source = [
+      todo("high-a", "high", "2026-01-05T09:20:00"),
+      todo("high-b", "high", "2026-01-05T09:40:00"),
+    ];
+    const [bucket] = buildTimelineTaskRailItems(source, "low");
+    expect(bucket.bucketStartMs).toBe(new Date("2026-01-05T08:00:00").getTime());
+    expect(bucket.anchorMs).toBe(new Date("2026-01-05T09:20:00").getTime());
+  });
+
+  it("工作记录时间条保持真实起点、持续时间并对重叠标题分层", () => {
+    const events: EventItem[] = [
+      {
+        id: "event-a",
+        startTime: "2026-01-01T09:00:00",
+        endTime: "2026-01-01T10:30:00",
+        title: "A",
+        tags: [],
+        updatedAt: "2026-01-01T00:00:00Z",
+      },
+      {
+        id: "event-b",
+        startTime: "2026-01-01T09:15:00",
+        endTime: "2026-01-01T10:00:00",
+        title: "B",
+        tags: [],
+        updatedAt: "2026-01-01T00:00:00Z",
+      },
+    ];
+    const strips = layoutTimelineEventStrips(events, ORIGIN, DAY_MS, 1200, "low");
+    expect(strips).toHaveLength(2);
+    expect(strips[0].leftPercent).toBeCloseTo(37.5);
+    expect(strips[0].widthPercent).toBeCloseTo(6.25);
+    expect(strips[0].durationWidthPx).toBeCloseTo(75);
+    expect(strips[0].lane).toBe(0);
+    expect(strips[1].lane).toBe(1);
   });
 
   it("工作记录可强制只布局在主轴下方", () => {

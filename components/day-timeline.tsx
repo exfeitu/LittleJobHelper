@@ -11,7 +11,6 @@ import {
   STATUS_LABEL,
   TimelineItem,
   TASK_RAIL_PRIORITIES,
-  assignLanes,
   buildTimelineTaskRailItems,
   buildWeekBrackets,
   endOfDay,
@@ -19,7 +18,7 @@ import {
   formatClock,
   formatDayLabel,
   getTimelineDensity,
-  layoutTimelineCards,
+  layoutTimelineEventStrips,
   startOfDay,
   todoToTimeline,
 } from "@/lib/timeline-layout";
@@ -182,10 +181,6 @@ export function DayTimeline({ events, todos = [], linkedTodoTitles = {}, onEvent
   const timelineDensity = getTimelineDensity(visibleDays);
   const totalDays = timelineDays.length;
   const shellWidth = Math.max((totalDays / visibleDays) * containerWidth, containerWidth);
-  const eventItems = useMemo(
-    () => events.map(eventToTimeline),
-    [events],
-  );
   const taskRailItems = useMemo(
     () => buildTimelineTaskRailItems(todos, timelineDensity),
     [todos, timelineDensity],
@@ -248,36 +243,34 @@ export function DayTimeline({ events, todos = [], linkedTodoTitles = {}, onEvent
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scrollToDate]);
 
-  // 不依赖 scale/shellWidth 的稳定计算（lane 分配、颜色、百分比位置）
-  const stableItems = useMemo(
-    () => assignLanes(eventItems, timeOrigin, totalRangeMs),
-    [eventItems, timeOrigin, totalRangeMs],
-  );
-
-  // 工作记录只放在主轴下方；任务使用上方固定优先级轨道，不再参与二维装箱。
-  const positionedItems = useMemo(
-    () => layoutTimelineCards(stableItems, shellWidth, timelineDensity, "bottom"),
-    [stableItems, shellWidth, timelineDensity],
+  const eventStrips = useMemo(
+    () => layoutTimelineEventStrips(
+      events,
+      timeOrigin,
+      totalRangeMs,
+      shellWidth,
+      timelineDensity,
+    ),
+    [events, timeOrigin, totalRangeMs, shellWidth, timelineDensity],
   );
 
   const visibleTaskRailItems = useMemo(() => {
     return taskRailItems.filter((item) => {
-      const leftPx = totalRangeMs > 0 ? ((item.bucketStartMs - timeOrigin) / totalRangeMs) * shellWidth : 0;
-      const rightPx = totalRangeMs > 0 ? ((item.bucketEndMs - timeOrigin) / totalRangeMs) * shellWidth : leftPx;
-      return rightPx >= visibleRange.left && leftPx <= visibleRange.right;
+      const anchorPx = totalRangeMs > 0
+        ? ((item.anchorMs - timeOrigin) / totalRangeMs) * shellWidth
+        : 0;
+      return anchorPx >= visibleRange.left - 160 && anchorPx <= visibleRange.right + 160;
     });
   }, [taskRailItems, timeOrigin, totalRangeMs, shellWidth, visibleRange]);
 
-  // 视口虚拟化：仅保留可见范围内的条目（memoized 避免每帧 filter）
-  const visiblePositionedItems = useMemo(() => {
-    if (!positionedItems.length) return [];
-    return positionedItems.filter((item) => {
-      const itemRightPx = item.cardLeftPx + item.cardWidthPx;
-      return itemRightPx >= visibleRange.left && item.cardLeftPx <= visibleRange.right;
+  const visibleEventStrips = useMemo(() => {
+    return eventStrips.filter((item) => {
+      const leftPx = (item.leftPercent / 100) * shellWidth;
+      const rightPx = leftPx + Math.max(item.labelWidthPx, item.durationWidthPx);
+      return rightPx >= visibleRange.left && leftPx <= visibleRange.right;
     });
-  }, [positionedItems, visibleRange]);
+  }, [eventStrips, shellWidth, visibleRange]);
 
-  // 时间轴保持固定的普通高度；任务密集时依靠聚合和二维错位，不再把整页纵向撑高。
   const trackHeight = 360;
 
   // 按周聚合计数（以周一为周起始对齐）
@@ -499,39 +492,50 @@ export function DayTimeline({ events, todos = [], linkedTodoTitles = {}, onEvent
               return <div key={day} className="line-day-chip" style={{ left: `${dayLeftPercent}%` }}>{formatDayLabel(day)}</div>;
             })}
 
-            {/* 固定高/中/低任务轨道：同一时间桶内聚合，不再用浮动大卡片。 */}
-            <div className="timeline-task-rails" aria-label="待办优先级时间轨道">
+            {/* 待办只作为轻量时间节点存在，优先级由纵向位置和颜色表达。 */}
+            <div className="timeline-task-layer" aria-label="待办优先级时间轨道">
               {TASK_RAIL_PRIORITIES.map((priority) => (
-                <div key={priority} className={`timeline-task-rail timeline-task-rail-${priority}`}>
-                  <span className="timeline-task-rail-label">{PRIORITY_LABEL[priority]}优先</span>
+                <div key={priority} className={`timeline-task-row timeline-task-row-${priority}`}>
+                  <span className="timeline-task-row-label">
+                    <i aria-hidden="true" />
+                    {PRIORITY_LABEL[priority]}
+                  </span>
                 </div>
               ))}
               {visibleTaskRailItems.map((railItem) => {
                 const leftPercent = totalRangeMs > 0
-                  ? ((railItem.bucketStartMs - timeOrigin) / totalRangeMs) * 100
+                  ? ((railItem.anchorMs - timeOrigin) / totalRangeMs) * 100
                   : 0;
-                const rawWidthPercent = totalRangeMs > 0
-                  ? ((railItem.bucketEndMs - railItem.bucketStartMs) / totalRangeMs) * 100
-                  : 0;
-                const widthPx = Math.max(42, (rawWidthPercent / 100) * shellWidth - 6);
-                const widthPercent = shellWidth > 0 ? (widthPx / shellWidth) * 100 : rawWidthPercent;
+                const anchorPx = (leftPercent / 100) * shellWidth;
+                const bucketWidthPx = totalRangeMs > 0
+                  ? ((railItem.bucketEndMs - railItem.bucketStartMs) / totalRangeMs) * shellWidth
+                  : 80;
+                const nodeWidthPx = Math.max(56, Math.min(136, bucketWidthPx - 10));
                 const isExpanded = expandedClusterId === railItem.id;
                 const firstTodo = railItem.todos[0];
-                const railStyle = {
+                const popoverWidthPx = Math.min(280, Math.max(180, containerWidth - 32));
+                const popoverLeftPx = Math.min(
+                  viewportLeft + containerWidth - 16 - popoverWidthPx,
+                  Math.max(viewportLeft + 16, anchorPx - popoverWidthPx / 2),
+                );
+                const nodeStyle = {
                   left: `${leftPercent}%`,
-                  width: `${widthPercent}%`,
-                  "--event-color": railItem.color,
+                  "--task-color": railItem.color,
+                  "--task-node-width": `${nodeWidthPx}px`,
+                  "--task-popover-width": `${popoverWidthPx}px`,
+                  "--task-popover-offset": `${popoverLeftPx - anchorPx}px`,
                 } as CSSProperties;
 
                 return (
                   <article
                     key={railItem.id}
-                    className={`timeline-task-bucket timeline-task-bucket-${railItem.priority}`}
-                    style={railStyle}
+                    className={`timeline-task-node timeline-task-node-${railItem.priority}`}
+                    style={nodeStyle}
                   >
                     <button
                       type="button"
-                      className="timeline-task-pill"
+                      className={`timeline-task-node-button status-${firstTodo.status}`}
+                      title={railItem.todos.length === 1 ? railItem.title : `${railItem.todos.length} 项待办`}
                       onClick={() => {
                         if (railItem.todos.length === 1) {
                           onTodoClick?.(firstTodo);
@@ -541,8 +545,13 @@ export function DayTimeline({ events, todos = [], linkedTodoTitles = {}, onEvent
                       }}
                       aria-expanded={railItem.todos.length > 1 ? isExpanded : undefined}
                     >
-                      <strong>{railItem.todos.length > 1 ? `${railItem.todos.length} 项` : railItem.title}</strong>
-                      <span>{railItem.todos.length > 1 ? "点击展开" : STATUS_LABEL[firstTodo.status] ?? firstTodo.status}</span>
+                      <span className="timeline-task-node-dot" aria-hidden="true" />
+                      <span className="timeline-task-node-title">
+                        {railItem.todos.length > 1 ? `${railItem.todos.length} 项任务` : railItem.title}
+                      </span>
+                      {railItem.todos.length > 1 ? (
+                        <span className="timeline-task-node-count">{railItem.todos.length}</span>
+                      ) : null}
                     </button>
                     {railItem.todos.length > 1 && isExpanded ? (
                       <div className="timeline-task-popover" role="dialog" aria-label={`${PRIORITY_LABEL[railItem.priority]}优先级待办`} onMouseDown={(event) => event.stopPropagation()}>
@@ -550,7 +559,7 @@ export function DayTimeline({ events, todos = [], linkedTodoTitles = {}, onEvent
                         {railItem.todos.map((todo) => (
                           <button key={todo.id} type="button" onClick={() => { setExpandedClusterId(null); onTodoClick?.(todo); }}>
                             <span>{todo.title}</span>
-                            <small>{todo.dueDate ? formatClock(todo.dueDate) : "未设时间"}</small>
+                            <small>{todo.dueDate ? formatClock(todo.dueDate) : STATUS_LABEL[todo.status] ?? todo.status}</small>
                           </button>
                         ))}
                       </div>
@@ -560,48 +569,39 @@ export function DayTimeline({ events, todos = [], linkedTodoTitles = {}, onEvent
               })}
             </div>
 
-            {/* 工作记录仅放在主轴下方，保持稳定卡片视觉。 */}
-            {visiblePositionedItems.map((item) => {
-              const style = {
+            {/* 工作记录直接显示为时间条：起点准确、持续时间可见，不再使用悬浮卡片。 */}
+            {visibleEventStrips.map((item) => {
+              const linkedCount = item.eventData.linkedTodoIds?.filter((id) => linkedTodoTitles[id]).length ?? 0;
+              const stripStyle = {
                 left: `${item.leftPercent}%`,
-                width: `${item.widthPercent}%`,
                 "--event-color": item.color,
-                "--card-offset-x": `${item.cardOffsetXPx}px`,
-                "--card-offset-y": `${item.cardOffsetYPx}px`,
-                "--card-width": `${item.cardWidthPx}px`,
-                "--card-height": `${item.cardHeightPx}px`,
+                "--event-lane-offset": `${item.lane * 28}px`,
+                "--event-label-width": `${item.labelWidthPx}px`,
+                "--event-duration-width": `${item.durationWidthPx}px`,
               } as CSSProperties;
 
               return (
                 <article
                   key={`event-${item.id}`}
-                  className="line-event line-event-bottom"
-                  style={style}
+                  className="timeline-event-strip"
+                  style={stripStyle}
                 >
-                  <div className="line-event-axis-group">
-                    <span className="line-event-point" />
-                    <span className="line-event-stem" />
-                  </div>
+                  <span className="timeline-event-duration" aria-hidden="true" />
                   <button
-                    className="line-event-card"
+                    className="timeline-event-strip-button"
                     type="button"
-                    onClick={() => item.eventData && onEventClick?.(item.eventData)}
+                    title={[
+                      `${formatClock(item.startTime)} — ${formatClock(item.endTime)}`,
+                      item.title,
+                      item.eventData.detail,
+                    ].filter(Boolean).join("\n")}
+                    onClick={() => onEventClick?.(item.eventData)}
                   >
-                    <div className="line-event-time">
-                      {formatClock(item.startTime)} — {formatClock(item.endTime)}
-                    </div>
-                    {item.eventData?.linkedTodoIds?.length ? (
-                      <div className="link-badge-group link-badge-group-event">
-                        {item.eventData.linkedTodoIds.filter((id) => linkedTodoTitles[id]).map((id) => (
-                          <div key={id} className="link-badge link-badge-event">关联待办：{linkedTodoTitles[id]}</div>
-                        ))}
-                      </div>
+                    <span className="timeline-event-strip-time">{formatClock(item.startTime)}</span>
+                    <strong>{item.title}</strong>
+                    {linkedCount > 0 ? (
+                      <span className="timeline-event-link-count">↗{linkedCount}</span>
                     ) : null}
-                    <h4>{item.title}</h4>
-                    <p>{item.detail}</p>
-                    <div className="tag-row compact-tags">
-                      {item.tags.map((tag) => <span key={tag} className="tag chip">{tag}</span>)}
-                    </div>
                   </button>
                 </article>
               );

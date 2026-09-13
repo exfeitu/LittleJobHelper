@@ -40,9 +40,24 @@ export type TimelineTaskRailItem = {
   priority: Priority;
   bucketStartMs: number;
   bucketEndMs: number;
+  anchorMs: number;
   title: string;
   todos: TodoItem[];
   color: string;
+};
+
+export type TimelineEventStripItem = {
+  id: string;
+  startTime: string;
+  endTime: string;
+  title: string;
+  eventData: EventItem;
+  color: string;
+  leftPercent: number;
+  widthPercent: number;
+  lane: number;
+  labelWidthPx: number;
+  durationWidthPx: number;
 };
 
 /** 统一的时间轴条目 */
@@ -129,11 +144,13 @@ export function buildTimelineTaskRailItems(
     .forEach((todo) => {
       const timelineItem = todoToTimeline(todo);
       const { startMs, endMs } = getTaskRailBucketBounds(timelineItem.startTime, density);
+      const anchorMs = new Date(timelineItem.startTime).getTime();
       const key = `${todo.priority}:${startMs}`;
       const existing = groups.get(key);
 
       if (existing) {
         existing.todos.push(todo);
+        existing.anchorMs = Math.min(existing.anchorMs, anchorMs);
         existing.title = `${existing.todos.length} 项`;
         return;
       }
@@ -143,6 +160,7 @@ export function buildTimelineTaskRailItems(
         priority: todo.priority,
         bucketStartMs: startMs,
         bucketEndMs: endMs,
+        anchorMs,
         title: todo.title,
         todos: [todo],
         color: TODO_PRIORITY_COLORS[todo.priority],
@@ -154,6 +172,55 @@ export function buildTimelineTaskRailItems(
     if (timeDiff !== 0) return timeDiff;
     return TASK_RAIL_PRIORITIES.indexOf(a.priority) - TASK_RAIL_PRIORITIES.indexOf(b.priority);
   });
+}
+
+export function layoutTimelineEventStrips(
+  events: EventItem[],
+  timeOrigin: number,
+  totalRangeMs: number,
+  shellWidth: number,
+  density: TimelineDensity,
+  maxLanes = 5,
+): TimelineEventStripItem[] {
+  if (!events.length || totalRangeMs <= 0 || shellWidth <= 0) return [];
+
+  const labelWidth = density === "low" ? 176 : density === "medium" ? 146 : 112;
+  const laneRight = Array.from({ length: maxLanes }, () => Number.NEGATIVE_INFINITY);
+
+  return [...events]
+    .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())
+    .map((event) => {
+      const startMs = new Date(event.startTime).getTime();
+      const endMs = Math.max(startMs + 60000, new Date(event.endTime).getTime());
+      const leftPercent = ((startMs - timeOrigin) / totalRangeMs) * 100;
+      const widthPercent = ((endMs - startMs) / totalRangeMs) * 100;
+      const leftPx = (leftPercent / 100) * shellWidth;
+      const durationWidthPx = Math.max(4, (widthPercent / 100) * shellWidth);
+      const collisionWidth = Math.max(labelWidth, durationWidthPx);
+      let lane = laneRight.findIndex((right) => leftPx >= right + 8);
+
+      if (lane < 0) {
+        lane = laneRight.reduce(
+          (best, right, index, values) => right < values[best] ? index : best,
+          0,
+        );
+      }
+      laneRight[lane] = Math.max(laneRight[lane], leftPx + collisionWidth);
+
+      return {
+        id: event.id,
+        startTime: event.startTime,
+        endTime: event.endTime,
+        title: event.title,
+        eventData: event,
+        color: "#5f8b6b",
+        leftPercent,
+        widthPercent,
+        lane,
+        labelWidthPx: labelWidth,
+        durationWidthPx,
+      };
+    });
 }
 
 function formatLocalDate(date: Date): string {
