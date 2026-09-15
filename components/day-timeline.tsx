@@ -2,6 +2,8 @@
 
 import { type CSSProperties, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { EventItem, TodoItem } from "@/types";
+import { AdaptiveDayView } from "@/components/adaptive-day-view";
+import { adaptiveViewForDays } from "@/lib/timeline-adaptive";
 import {
   BASE_VISIBLE_DAYS,
   MAX_SCALE,
@@ -178,6 +180,11 @@ export function DayTimeline({ events, todos = [], linkedTodoTitles = {}, onEvent
   const totalRangeMs = timeEnd - timeOrigin;
 
   const visibleDays = BASE_VISIBLE_DAYS / scale;
+  const adaptiveView = adaptiveViewForDays(visibleDays);
+  const adaptiveDate = useMemo(
+    () => scrollToDate ? new Date(`${scrollToDate}T00:00:00`) : new Date(),
+    [scrollToDate],
+  );
   const timelineDensity = getTimelineDensity(visibleDays);
   const totalDays = timelineDays.length;
   const shellWidth = Math.max((totalDays / visibleDays) * containerWidth, containerWidth);
@@ -426,6 +433,18 @@ export function DayTimeline({ events, todos = [], linkedTodoTitles = {}, onEvent
     },
     [shellWidth, containerWidth, totalDays],
   );
+
+  if (adaptiveView === "day") {
+    return (
+      <AdaptiveDayView
+        date={adaptiveDate}
+        events={events}
+        todos={todos}
+        onEventClick={onEventClick}
+        onTodoClick={onTodoClick}
+      />
+    );
+  }
 
   return (
     <div className={`line-timeline line-timeline-density-${timelineDensity}`} suppressHydrationWarning>

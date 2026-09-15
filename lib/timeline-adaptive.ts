@@ -165,7 +165,7 @@ export function buildDetailedTodoMarkers(
     }
   }
 
-  return groups.flatMap((group) => {
+  return groups.flatMap((group): DetailedTodoMarker[] => {
     if (group.length >= clusterAt) {
       return [{
         kind: "cluster" as const,
