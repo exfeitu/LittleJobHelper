@@ -3,8 +3,10 @@
 import { type CSSProperties, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { EventItem, TodoItem } from "@/types";
 import { AdaptiveDayView } from "@/components/adaptive-day-view";
+import { AdaptiveThreeDayView } from "@/components/adaptive-three-day-view";
+import { AdaptiveWeekView } from "@/components/adaptive-week-view";
 import { TimelineDetailPanel, type TimelineSelection } from "@/components/timeline-detail-panel";
-import { adaptiveViewForDays } from "@/lib/timeline-adaptive";
+import { adaptiveViewForDays, localDateKey } from "@/lib/timeline-adaptive";
 import {
   BASE_VISIBLE_DAYS,
   MAX_SCALE,
@@ -67,6 +69,7 @@ export function DayTimeline({ events, todos = [], linkedTodoTitles = {}, onEvent
   const [timelineReady, setTimelineReady] = useState(false);
   const [expandedClusterId, setExpandedClusterId] = useState<string | null>(null);
   const [selection, setSelection] = useState<TimelineSelection>(null);
+  const [adaptiveFocusDate, setAdaptiveFocusDate] = useState(() => scrollToDate ?? localDateKey(new Date()));
 
   // 视口虚拟化：只渲染可视区域附近的元素
   const [viewportLeft, setViewportLeft] = useState(0);
@@ -184,8 +187,8 @@ export function DayTimeline({ events, todos = [], linkedTodoTitles = {}, onEvent
   const visibleDays = BASE_VISIBLE_DAYS / scale;
   const adaptiveView = adaptiveViewForDays(visibleDays);
   const adaptiveDate = useMemo(
-    () => scrollToDate ? new Date(`${scrollToDate}T00:00:00`) : new Date(),
-    [scrollToDate],
+    () => new Date(`${adaptiveFocusDate}T00:00:00`),
+    [adaptiveFocusDate],
   );
   const timelineDensity = getTimelineDensity(visibleDays);
   const totalDays = timelineDays.length;
@@ -242,6 +245,7 @@ export function DayTimeline({ events, todos = [], linkedTodoTitles = {}, onEvent
 
   // 响应外部跳转到指定日期
   useEffect(() => {
+    if (scrollToDate) setAdaptiveFocusDate(scrollToDate);
     if (!scrollToDate || !initializedRef.current) return;
     const container = scrollRef.current;
     if (!container || !containerWidth || !totalRangeMs) return;
@@ -436,6 +440,16 @@ export function DayTimeline({ events, todos = [], linkedTodoTitles = {}, onEvent
     [shellWidth, containerWidth, totalDays],
   );
 
+  const detailPanel = (
+    <TimelineDetailPanel
+      selection={selection}
+      linkedTodoTitles={linkedTodoTitles}
+      onEditEvent={onEventClick}
+      onEditTodo={onTodoClick}
+      onClear={() => setSelection(null)}
+    />
+  );
+
   if (adaptiveView === "day") {
     return (
       <div className="adaptive-timeline-layout">
@@ -448,13 +462,44 @@ export function DayTimeline({ events, todos = [], linkedTodoTitles = {}, onEvent
             onTodoClick={(todo) => setSelection({ kind: "todo", todo })}
           />
         </div>
-        <TimelineDetailPanel
-          selection={selection}
-          linkedTodoTitles={linkedTodoTitles}
-          onEditEvent={onEventClick}
-          onEditTodo={onTodoClick}
-          onClear={() => setSelection(null)}
-        />
+        {detailPanel}
+      </div>
+    );
+  }
+
+  if (adaptiveView === "three") {
+    return (
+      <div className="adaptive-timeline-layout">
+        <div className="adaptive-timeline-primary">
+          <AdaptiveThreeDayView
+            startDate={adaptiveDate}
+            events={events}
+            todos={todos}
+            onEventClick={(event) => setSelection({ kind: "event", event })}
+            onTodoClick={(todo) => setSelection({ kind: "todo", todo })}
+          />
+        </div>
+        {detailPanel}
+      </div>
+    );
+  }
+
+  if (adaptiveView === "week") {
+    return (
+      <div className="adaptive-timeline-layout">
+        <div className="adaptive-timeline-primary">
+          <AdaptiveWeekView
+            startDate={adaptiveDate}
+            events={events}
+            todos={todos}
+            onDayClick={(dateKey) => {
+              setAdaptiveFocusDate(dateKey);
+              setScale(1);
+              setSelection(null);
+            }}
+          />
+        </div>
+        {detailPanel}
       </div>
     );
   }
