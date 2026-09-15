@@ -3,6 +3,7 @@
 import { type CSSProperties, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { EventItem, TodoItem } from "@/types";
 import { AdaptiveDayView } from "@/components/adaptive-day-view";
+import { TimelineDetailPanel, type TimelineSelection } from "@/components/timeline-detail-panel";
 import { adaptiveViewForDays } from "@/lib/timeline-adaptive";
 import {
   BASE_VISIBLE_DAYS,
@@ -65,6 +66,7 @@ export function DayTimeline({ events, todos = [], linkedTodoTitles = {}, onEvent
   const initializedRef = useRef(false);
   const [timelineReady, setTimelineReady] = useState(false);
   const [expandedClusterId, setExpandedClusterId] = useState<string | null>(null);
+  const [selection, setSelection] = useState<TimelineSelection>(null);
 
   // 视口虚拟化：只渲染可视区域附近的元素
   const [viewportLeft, setViewportLeft] = useState(0);
@@ -436,13 +438,24 @@ export function DayTimeline({ events, todos = [], linkedTodoTitles = {}, onEvent
 
   if (adaptiveView === "day") {
     return (
-      <AdaptiveDayView
-        date={adaptiveDate}
-        events={events}
-        todos={todos}
-        onEventClick={onEventClick}
-        onTodoClick={onTodoClick}
-      />
+      <div className="adaptive-timeline-layout">
+        <div className="adaptive-timeline-primary">
+          <AdaptiveDayView
+            date={adaptiveDate}
+            events={events}
+            todos={todos}
+            onEventClick={(event) => setSelection({ kind: "event", event })}
+            onTodoClick={(todo) => setSelection({ kind: "todo", todo })}
+          />
+        </div>
+        <TimelineDetailPanel
+          selection={selection}
+          linkedTodoTitles={linkedTodoTitles}
+          onEditEvent={onEventClick}
+          onEditTodo={onTodoClick}
+          onClear={() => setSelection(null)}
+        />
+      </div>
     );
   }
 
