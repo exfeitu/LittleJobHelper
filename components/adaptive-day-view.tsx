@@ -1,7 +1,7 @@
 "use client";
 import { type CSSProperties, useMemo } from "react";
 import type { EventItem, TodoItem } from "@/types";
-import { buildDaySummaries, buildDetailedTodoMarkers, layoutDetailedEvents, shiftDate, startOfLocalDay, PRIORITY_COLORS, STATUS_LABEL, formatClock, eventColor, dateLabel } from "@/lib/timeline-adaptive";
+import { buildDaySummaries, buildDetailedTodoMarkers, layoutDetailedEvents, shiftDate, startOfLocalDay, PRIORITY_COLORS, STATUS_LABEL, formatClock, eventColor, dateLabel, isTodoOverdue } from "@/lib/timeline-adaptive";
 import { TimelinePopover } from "./timeline-popover";
 
 export type AdaptiveDayViewProps = {
@@ -16,11 +16,13 @@ export function AdaptiveDayView({ date, events, todos, now, compact = false, wid
   const duration = end - start;
   const day = useMemo(() => buildDaySummaries(start, 1, todos, events)[0], [start, todos, events]);
   const markers = useMemo(() => buildDetailedTodoMarkers(day.todos,
-    (compact ? 56 : 132) / width * duration / 60_000, compact ? 2 : 4, end), [day.todos, compact, width, duration, end]);
+    (compact ? 56 : 180) / width * duration / 60_000, compact ? 2 : 4, end), [day.todos, compact, width, duration, end]);
   const layout = useMemo(() => layoutDetailedEvents(day.events, start, end), [day.events, start, end]);
+  const hasOverdue = markers.some(m => m.kind === "item" && isTodoOverdue(m.todo, now));
   const ticks = Array.from({ length: compact ? 3 : 24 }, (_, i) => compact ? i * 12 : i);
-  return <section className={"at-day" + (compact ? " at-day-compact" : "")} style={{ width }} aria-label={dateLabel(date)}>
-    <div className="at-date-heading">{dateLabel(date)}</div>
+  return <section className={"at-day" + (compact ? " at-day-compact" : "")} style={{ width }} aria-label={dateLabel(date)}
+    data-todo-lanes={Math.max(1, ...markers.map(m => m.lane + 1))} data-overdue={hasOverdue} data-event-lanes={Math.max(1, ...layout.visible.map(b => b.lane + 1))} data-overflow={layout.overflow.length > 0}>
+    {compact && <div className="at-date-heading">{dateLabel(date)}</div>}
     <div className="at-hour-axis">
       {ticks.map(hour => {
         const tick = new Date(start);
@@ -37,23 +39,25 @@ export function AdaptiveDayView({ date, events, todos, now, compact = false, wid
       <div className="at-todos">
         {markers.map(marker => {
           const left = (marker.anchorMs - start) / duration * 100;
-          const style = { left: left + "%", top: 14 + marker.lane * (compact ? 20 : 48) } as CSSProperties;
+          const style = { left: left + "%", top: 18 + marker.lane * (compact ? 20 : hasOverdue ? 76 : 60) } as CSSProperties;
           if (marker.kind === "cluster") return <div key={marker.id} className="at-marker" style={style}>
             <span className="at-pin at-cluster-pin" style={{ "--task-color": PRIORITY_COLORS[marker.todos.some(t => t.priority === "high") ? "high" : marker.todos.some(t => t.priority === "medium") ? "medium" : "low"] } as CSSProperties} />
             <TimelinePopover label={marker.todos.length + "项待办"} className={"at-cluster" + (width * (1 - left / 100) < 56 ? " at-cluster-edge" : "")} trigger={marker.todos.length + "项"}>
               {marker.todos.map(todo => <button type="button" key={todo.id} onClick={() => onTodoClick(todo)}>
-                <i style={{ background: PRIORITY_COLORS[todo.priority] }} /><span>{todo.title}</span><small>{formatClock(todo.startTime || todo.dueDate!)}</small>
+                <i style={{ background: PRIORITY_COLORS[todo.priority] }} /><span>{todo.title}{isTodoOverdue(todo, now) && <small className="at-overdue">逾期未完成</small>}</span><small>{formatClock(todo.startTime || todo.dueDate!)}</small>
               </button>)}
             </TimelinePopover>
           </div>;
           const todo = marker.todo;
+          const overdue = isTodoOverdue(todo, now);
           return <button key={marker.id} type="button" className={"at-marker at-todo at-status-" + todo.status}
             style={{ ...style, "--task-color": PRIORITY_COLORS[todo.priority] } as CSSProperties}
-            aria-label={todo.title + "，" + formatClock(marker.anchorMs) + "，" + STATUS_LABEL[todo.status]}
+            aria-label={todo.title + "，" + formatClock(marker.anchorMs) + "，" + STATUS_LABEL[todo.status] + (overdue ? "，逾期未完成" : "")}
             title={todo.title} onClick={() => onTodoClick(todo)}>
             <span className="at-pin">{todo.status === "completed" ? "✓" : ""}</span>
-            {!compact && <span className="at-todo-label" style={{ width: 116, marginLeft: Math.min(0, width * (1 - left / 100) - 132) }}>
+            {!compact && <span className="at-todo-label" style={{ width: 164, marginLeft: Math.min(0, width * (1 - left / 100) - 180) }}>
               <small>{formatClock(marker.anchorMs)}</small><strong>{todo.title}</strong>
+              {overdue && <span className="at-overdue">逾期未完成</span>}
             </span>}
           </button>;
         })}
@@ -61,13 +65,13 @@ export function AdaptiveDayView({ date, events, todos, now, compact = false, wid
       <div className="at-events">
         {layout.visible.map(band => {
           const pixels = band.widthPercent / 100 * width;
-          return <button key={band.event.id} type="button" className="at-event"
-            style={{ left: band.leftPercent + "%", width: band.widthPercent + "%", top: 10 + band.lane * 38, background: eventColor(band.event.id) }}
+          return <button key={band.event.id} type="button" className={"at-event" + (!compact && pixels < 80 ? " at-event-narrow" : "")}
+            style={{ left: band.leftPercent + "%", width: band.widthPercent + "%", top: 12 + band.lane * (compact ? 38 : 46), background: eventColor(band.event.id) }}
             data-lane={band.lane} data-event-id={band.event.id}
             aria-label={band.event.title + "，" + formatClock(band.event.startTime) + "至" + formatClock(band.event.endTime)}
             title={band.event.title + " " + formatClock(band.event.startTime) + "–" + formatClock(band.event.endTime)}
             onClick={() => onEventClick(band.event)}>
-            {pixels >= (compact ? 65 : 45) && <span>{!compact && pixels >= 110 && <small>{formatClock(band.event.startTime)}–{formatClock(band.event.endTime)}</small>}<strong>{band.event.title}</strong></span>}
+            {pixels >= (compact ? 65 : 45) && <span>{!compact && pixels >= 80 && <small>{formatClock(band.event.startTime)}–{formatClock(band.event.endTime)}</small>}<strong>{band.event.title}</strong></span>}
           </button>;
         })}
         {layout.overflow.map(group => <div className="at-overflow" key={group.id} style={{ left: Math.min(width - 90, (group.anchorMs - start) / duration * width) }}>

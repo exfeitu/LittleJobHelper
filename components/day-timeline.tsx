@@ -23,12 +23,15 @@ export function DayTimeline({ events, todos = [], onEventClick, onTodoClick }: P
   const zoomDays = useRef(1);
   const drag = useRef<{ x: number; left: number } | null>(null);
   const [dragging, setDragging] = useState(false);
+  const [todayRequest, setTodayRequest] = useState(0);
   const dayCount = ADAPTIVE_VIEW_DAYS[view];
   const start = useMemo(() => startOfLocalDay(focusDate), [focusDate]);
   const summaries = useMemo(() => buildDaySummaries(+start, dayCount, todos, events), [start, dayCount, todos, events]);
   const unscheduled = useMemo(() => todos.filter(t => t.status !== "cancelled" && todoAnchorMs(t) === null), [todos]);
   const invalidEvents = useMemo(() => events.filter(e => !eventInterval(e)), [events]);
-  const canvasWidth = Math.max(viewportWidth, view === "day" ? 1680 : view === "three" ? 630 : view === "week" ? 630 : 900);
+  const canvasWidth = Math.max(viewportWidth, view === "day" ? 2400 : view === "three" ? 630 : view === "week" ? 630 : 900);
+  const showDetail = (view === "day" || view === "three") && selection !== null &&
+    (selection.kind === "todo" ? todos.some(t => t.id === selection.id) : events.some(e => e.id === selection.id));
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 30_000);
     return () => clearInterval(timer);
@@ -42,8 +45,16 @@ export function DayTimeline({ events, todos = [], onEventClick, onTodoClick }: P
     return () => observer.disconnect();
   }, []);
   useLayoutEffect(() => {
-    if (scrollRef.current) scrollRef.current.scrollLeft = view === "day" ? Math.min(canvasWidth * 7 / 24, canvasWidth - viewportWidth) : 0;
-  }, [view, focusDate, canvasWidth, viewportWidth]);
+    const node = scrollRef.current;
+    if (!node) return;
+    const current = new Date();
+    const centerNow = todayRequest > 0 && focusDate === localDateKey(current);
+    const startMs = +startOfLocalDay(focusDate);
+    const duration = +startOfLocalDay(shiftDate(focusDate, 1)) - startMs;
+    node.scrollLeft = view !== "day" ? 0 : centerNow
+      ? Math.max(0, canvasWidth * (+current - startMs) / duration - node.clientWidth / 2)
+      : Math.min(canvasWidth * 7 / 24, canvasWidth - node.clientWidth);
+  }, [view, focusDate, canvasWidth, todayRequest]);
   useEffect(() => {
     const node = scrollRef.current;
     if (!node) return;
@@ -72,11 +83,11 @@ export function DayTimeline({ events, todos = [], onEventClick, onTodoClick }: P
         <label className="at-date-input"><span className="sr-only">跳转日期</span><input type="date" aria-label="跳转日期" value={focusDate}
           onChange={event => { if (event.target.value) setFocusDate(event.target.value); }} /></label>
         <button type="button" aria-label="后一时间段" onClick={() => setFocusDate(shiftDate(focusDate, dayCount))}>›</button>
-        <button type="button" onClick={() => { setFocusDate(localDateKey(new Date())); if (scrollRef.current && view === "day") scrollRef.current.scrollLeft = Math.max(0, canvasWidth * new Date().getHours() / 24 - viewportWidth / 2); }}>今天</button>
+        <button type="button" onClick={() => { setFocusDate(localDateKey(new Date())); setNow(Date.now()); setTodayRequest(value => value + 1); }}>今天</button>
       </div>
     </div>
     <div className="at-heading"><strong>{viewTitles[view]}</strong><span>{dateLabel(start)}{dayCount > 1 ? " — " + dateLabel(shiftDate(start, dayCount - 1)) : ""}</span></div>
-    <div className="at-layout">
+    <div className={"at-layout" + (showDetail ? " has-detail" : "")}>
       <div className="at-primary">
         <div className="at-time-area">
           <div className="at-row-labels"><span>时间</span><strong>{view === "month" ? "待办密度" : "待办任务"}</strong><strong>{view === "month" ? "工作密度" : "工作记录"}{view === "day" || view === "three" ? <small>最多 3 层</small> : null}</strong></div>
@@ -122,7 +133,7 @@ export function DayTimeline({ events, todos = [], onEventClick, onTodoClick }: P
           </TimelinePopover>}
         </div>}
       </div>
-      {(view === "day" || view === "three") && <TimelineDetailPanel selection={selection} todos={todos} events={events} onSelect={setSelection} onEditTodo={onTodoClick} onEditEvent={onEventClick} />}
+      {showDetail && <TimelineDetailPanel selection={selection} todos={todos} events={events} onSelect={setSelection} onEditTodo={onTodoClick} onEditEvent={onEventClick} />}
     </div>
   </div>;
 }

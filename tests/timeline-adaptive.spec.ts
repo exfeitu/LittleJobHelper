@@ -16,19 +16,92 @@ const events: EventItem[] = ["a", "b", "c", "d"].map((id, index) => ({
   detail: "详情不会常驻时间块", tags: ["测试"], linkedTodoIds: index === 0 ? ["A"] : [], updatedAt: stamp("08:00"),
 }));
 
-async function loadFixture(page: Page) {
+async function loadFixture(page: Page, data = { events, todos }) {
   await page.goto("/LittleJobHelper");
   await page.getByRole("button", { name: "📊 导出", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "导出数据", exact: true });
   // 使用产品导入入口，在 Playwright 隔离浏览器中装载，不直接操作存储。
   await dialog.locator('input[type="file"]').setInputFiles({ name: "timeline.json", mimeType: "application/json",
-    buffer: Buffer.from(JSON.stringify({ version: 3, events, todos, memos: [], customTags: [] })) });
+    buffer: Buffer.from(JSON.stringify({ version: 3, ...data, memos: [], customTags: [] })) });
   await expect(dialog.getByText(/导入成功/)).toBeVisible();
   await dialog.getByRole("button", { name: "关闭", exact: true }).click();
   await page.getByLabel("跳转日期", { exact: true }).fill(date);
 }
 
 test.use({ viewport: { width: 1600, height: 1000 } });
+
+test("approved-visual-tasks-across-time", async ({ page }, info) => {
+  await page.clock.setFixedTime(new Date(`${date}T14:00:00`));
+  const visualTodos: TodoItem[] = [
+    { ...task("overdue", "09:30", "high"), title: "提交周报", dueDate: stamp("09:30") },
+    { ...task("done", "11:30", "low"), title: "核对资料", status: "completed" },
+    { ...task("now", "14:00"), title: "整理问题清单", status: "in_progress" },
+    { ...task("later", "16:00", "high"), title: "项目评审" },
+  ];
+  const visualEvents = [
+    ["08:00", "09:00", "需求梳理"], ["08:30", "09:20", "晨会"], ["09:15", "10:30", "接口开发"],
+    ["10:00", "11:00", "问题沟通"], ["10:15", "10:45", "电话支持"], ["10:45", "12:00", "联调排查"],
+    ["11:30", "12:30", "数据核对"], ["13:00", "14:00", "文档整理"],
+  ].map(([from, to, title], index) => ({ ...events[0], id: `visual-${index}`, title, startTime: stamp(from), endTime: stamp(to), linkedTodoIds: [] }));
+  await loadFixture(page, { todos: visualTodos, events: visualEvents });
+  const root = page.locator(".at-root");
+  await expect(root.locator(".at-todo")).toHaveCount(4);
+  await expect(root.locator(".at-cluster")).toHaveCount(0);
+  await expect(root.locator(".at-overdue")).toHaveText("逾期未完成");
+  await expect(root.locator(".at-day")).toHaveAttribute("data-todo-lanes", "1");
+  const overdue = root.getByRole("button", { name: /提交周报，09:30.*逾期未完成/ });
+  const noon = root.locator(".at-now");
+  expect((await overdue.boundingBox())!.x).toBeLessThan((await noon.boundingBox())!.x);
+  await expect(root.locator(".at-status-completed .at-pin")).toHaveText("✓");
+  await expect(root.locator(".at-status-in_progress")).toHaveCount(1);
+  await expect(root.getByText("未来安排")).toHaveCount(0);
+  await expect(root.getByText("已发生")).toHaveCount(0);
+  await root.locator(".at-scroll").focus();
+  await root.screenshot({ path: info.outputPath("approved-day.png") });
+  await overdue.click();
+  await expect(root.getByRole("complementary", { name: "时间轴详情" }).getByText("2026/09/14 09:30").first()).toBeVisible();
+  await root.screenshot({ path: info.outputPath("approved-detail.png") });
+  await root.getByRole("button", { name: "关闭详情" }).click();
+  await root.getByRole("button", { name: "3天", exact: true }).click();
+  await expect(root.getByRole("button", { name: "2项待办", exact: true })).toHaveCount(2);
+  await root.screenshot({ path: info.outputPath("approved-three.png") });
+  await root.getByRole("button", { name: "1天", exact: true }).click();
+  await root.getByLabel("跳转日期").fill("2026-09-13");
+  await root.getByRole("button", { name: "今天", exact: true }).click();
+  await expect(root.getByLabel("跳转日期")).toHaveValue(date);
+  const box = (await root.locator(".at-scroll").boundingBox())!;
+  await expect.poll(async () => Math.abs((await noon.boundingBox())!.x - (box.x + box.width / 2))).toBeLessThan(3);
+});
+
+test("day-baseline-step1", async ({ page }, info) => {
+  await page.clock.setFixedTime(new Date("2026-09-14T12:27:00"));
+  await loadFixture(page);
+  const root = page.locator(".at-root");
+  const scroll = root.locator(".at-scroll");
+  await expect(root.getByRole("complementary", { name: "时间轴详情" })).toHaveCount(0);
+  const fullWidth = await scroll.evaluate(n => n.clientWidth);
+  expect(fullWidth).toBeGreaterThan(1300);
+  await expect(root.locator(".at-now")).toContainText("12:27");
+  const nowLabel = (await root.locator(".at-now > span").boundingBox())!;
+  const noonTick = (await root.locator(".at-hour-axis").getByText("12:00", { exact: true }).boundingBox())!;
+  expect(nowLabel.y + nowLabel.height).toBeLessThan(noonTick.y);
+  expect(await root.locator(".at-todo-label strong").first().evaluate(n => getComputedStyle(n).fontSize)).toBe("14px");
+  await root.screenshot({ path: info.outputPath("day-full-width.png") });
+  await scroll.evaluate(n => { n.scrollLeft += 50; });
+  const left = await scroll.evaluate(n => n.scrollLeft);
+  await root.getByRole("button", { name: /任务A.*08:00/ }).click();
+  await expect.poll(() => scroll.evaluate(n => n.clientWidth)).toBeLessThan(fullWidth);
+  expect(await scroll.evaluate(n => n.scrollLeft)).toBe(left);
+  await root.screenshot({ path: info.outputPath("day-detail.png") });
+  await root.getByRole("button", { name: "关闭详情", exact: true }).click();
+  await expect.poll(() => scroll.evaluate(n => n.clientWidth)).toBe(fullWidth);
+  expect(await scroll.evaluate(n => n.scrollLeft)).toBe(left);
+  const denseHeight = await root.locator(".at-time-area").evaluate(n => n.clientHeight);
+  await loadFixture(page, { todos: [todos[0]], events: [events[0]] });
+  const sparseHeight = await root.locator(".at-time-area").evaluate(n => n.clientHeight);
+  expect(denseHeight - sparseHeight).toBeGreaterThan(200);
+  await root.screenshot({ path: info.outputPath("day-sparse.png") });
+});
 
 test("详细视图：真实时间、2/3 错层、4 项聚合、记录溢出和详情编辑", async ({ page }, info) => {
   await loadFixture(page);
@@ -37,7 +110,7 @@ test("详细视图：真实时间、2/3 错层、4 项聚合、记录溢出和�
   await expect(root.locator(".at-todo")).toHaveCount(6);
   const a = root.getByRole("button", { name: /任务A.*08:00/ });
   const b = root.getByRole("button", { name: /任务B.*08:10/ });
-  expect((await b.boundingBox())!.y - (await a.boundingBox())!.y).toBe(48);
+  expect((await b.boundingBox())!.y - (await a.boundingBox())!.y).toBe(60);
   const tops = await root.locator(".at-todo-label").evaluateAll(nodes => nodes.map(node => {
     const r = node.getBoundingClientRect(); return { x: r.x, y: r.y, right: r.right, bottom: r.bottom };
   }));
@@ -105,8 +178,8 @@ test("3/7/30 天降低密度、月视图回到当天、日期导航和滚轮阈�
   const scroll = root.locator(".at-scroll");
   const before = await scroll.evaluate(n => n.scrollLeft);
   const bounds = (await scroll.boundingBox())!;
-  await page.mouse.move(bounds.x + 250, bounds.y + 220);
-  await page.mouse.down(); await page.mouse.move(bounds.x + 150, bounds.y + 220); await page.mouse.up();
+  await page.mouse.move(bounds.x + 250, bounds.y + bounds.height / 2);
+  await page.mouse.down(); await page.mouse.move(bounds.x + 150, bounds.y + bounds.height / 2); await page.mouse.up();
   expect(await scroll.evaluate(n => n.scrollLeft)).toBeGreaterThan(before);
 });
 

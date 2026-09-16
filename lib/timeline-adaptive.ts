@@ -51,10 +51,17 @@ export function eventColor(id: string): string {
 export function todoAnchorMs(todo: TodoItem): number | null {
   for (const value of [todo.startTime, todo.dueDate]) {
     if (!value) continue;
-    const parsed = +new Date(value);
+    const parsed = /^\d{4}-\d{2}-\d{2}$/.test(value) ? +startOfLocalDay(value) : +new Date(value);
     if (Number.isFinite(parsed)) return parsed;
   }
   return null;
+}
+/** 安排时间不是截止时间；旧版仅日期的截止值按本地当天结束判断。 */
+export function isTodoOverdue(todo: TodoItem, now: number): boolean {
+  if (!todo.dueDate || todo.status === "completed" || todo.status === "cancelled") return false;
+  const deadline = /^\d{4}-\d{2}-\d{2}$/.test(todo.dueDate)
+    ? +startOfLocalDay(shiftDate(todo.dueDate, 1)) : +new Date(todo.dueDate);
+  return Number.isFinite(deadline) && now > deadline;
 }
 export function eventInterval(event: EventItem): { start: number; end: number } | null {
   const start = +new Date(event.startTime);
@@ -70,22 +77,30 @@ export function buildDetailedTodoMarkers(todos: TodoItem[], proximityMinutes = 4
     .map(todo => ({ todo, anchorMs: todoAnchorMs(todo) }))
     .filter((entry): entry is { todo: TodoItem; anchorMs: number } => entry.anchorMs !== null)
     .sort((a, b) => a.anchorMs - b.anchorMs || a.todo.id.localeCompare(b.todo.id));
-  const groups: typeof ordered[] = [];
-  let occupiedEnd = -Infinity;
+  const placed: { marker: DetailedTodoMarker; end: number }[] = [];
   const span = Math.max(1, proximityMinutes) * 60_000;
+  const limit = Math.min(4, Math.max(2, clusterAt));
   for (const entry of ordered) {
-    const current = groups[groups.length - 1];
     const labelStart = Math.min(entry.anchorMs, rangeEndMs - span);
-    if (!current || labelStart >= occupiedEnd) groups.push([entry]);
-    else current.push(entry);
-    occupiedEnd = Math.max(occupiedEnd, labelStart + span);
-  }
-  return groups.flatMap((group): DetailedTodoMarker[] => {
-    if (group.length >= Math.min(4, Math.max(2, clusterAt))) {
-      return [{ kind: "cluster", id: "todos-" + group[0].todo.id, anchorMs: group[0].anchorMs, lane: 0, todos: group.map(e => e.todo) }];
+    const active = placed.filter(p => p.end > labelStart);
+    const cluster = active.find(p => p.marker.kind === "cluster");
+    if (cluster && cluster.marker.kind === "cluster") {
+      cluster.marker.todos.push(entry.todo);
+      // 聚合窗口始终固定于首个节点，不因新成员延长，避免链式吞并整段时间。
+      continue;
     }
-    return group.map((entry, lane) => ({ kind: "item", id: entry.todo.id, ...entry, lane }));
-  });
+    if (active.length >= limit - 1) {
+      const members = [...active.flatMap(p => p.marker.kind === "item" ? [p.marker.todo] : p.marker.todos), entry.todo];
+      const first = active[0];
+      for (const item of active) placed.splice(placed.indexOf(item), 1);
+      placed.push({ end: first.end, marker: { kind: "cluster", id: "todos-" + members[0].id,
+        anchorMs: first.marker.anchorMs, lane: first.marker.lane, todos: members } });
+      continue;
+    }
+    const lane = [0, 1, 2].find(lane => active.every(p => p.marker.lane !== lane))!;
+    placed.push({ end: labelStart + span, marker: { kind: "item", id: entry.todo.id, ...entry, lane } });
+  }
+  return placed.map(p => p.marker).sort((a, b) => a.anchorMs - b.anchorMs || a.id.localeCompare(b.id));
 }
 export type DetailedEventBand = { event: EventItem; lane: number; leftPercent: number; widthPercent: number };
 export type OverflowEventGroup = { id: string; anchorMs: number; events: EventItem[] };

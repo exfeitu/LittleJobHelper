@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { EventItem, TodoItem } from "@/types";
-import { adaptiveViewForDays, buildDetailedTodoMarkers, layoutDetailedEvents, buildDaySummaries, densityLevel, todoAnchorMs, startOfLocalDay, shiftDate } from "../timeline-adaptive";
+import { adaptiveViewForDays, buildDetailedTodoMarkers, layoutDetailedEvents, buildDaySummaries, densityLevel, todoAnchorMs, startOfLocalDay, shiftDate, isTodoOverdue } from "../timeline-adaptive";
 const start = +new Date("2026-09-14T00:00:00");
 const end = +new Date("2026-09-15T00:00:00");
 const todo = (id: string, time = "09:00", priority: TodoItem["priority"] = "medium"): TodoItem => ({
@@ -20,6 +20,50 @@ describe("自适应模式与日期", () => {
   });
 });
 describe("真实时间待办节点", () => {
+  it("相邻但不同时拥挤的任务复用层，不链式聚合整段时间", () => {
+    const source = ["08:00", "09:30", "11:00", "12:30", "14:00"].map((time, i) => todo(String(i), time));
+    expect(buildDetailedTodoMarkers(source, 108).map(m => [m.kind, m.lane])).toEqual([
+      ["item", 0], ["item", 1], ["item", 0], ["item", 1], ["item", 0],
+    ]);
+  });
+  it("聚合窗口不会随成员延长，后续时段继续独立展示", () => {
+    const source = ["09:00", "09:10", "09:20", "09:30", "09:50", "10:00", "10:50"].map((time, i) => todo(String(i), time));
+    const markers = buildDetailedTodoMarkers(source, 60);
+    expect(markers.map(m => m.kind)).toEqual(["cluster", "item", "item"]);
+    if (markers[0].kind === "cluster") expect(markers[0].todos).toHaveLength(5);
+    expect(markers[1].anchorMs).toBe(todoAnchorMs(source[5]));
+    expect(source).toHaveLength(7);
+  });
+  it("三天模式的聚合也保留不同时段的分布", () => {
+    const markers = buildDetailedTodoMarkers(["08:00", "09:00", "10:00", "11:00"].map((t, i) => todo(String(i), t)), 90, 2);
+    expect(markers).toHaveLength(2);
+    expect(markers.map(m => m.anchorMs)).toEqual([todoAnchorMs(todo("a", "08:00")), todoAnchorMs(todo("b", "10:00"))]);
+  });
+  it("大量不均匀时间输入无丢失、不改原数据，层内标签不相撞", () => {
+    const source = Array.from({ length: 150 }, (_, i) => ({ ...todo(String(i)), startTime: new Date(start + ((i * 97) % 1440) * 60000).toISOString() }));
+    const before = JSON.stringify(source);
+    const markers = buildDetailedTodoMarkers(source, 108, 4, end);
+    expect(markers.flatMap(m => m.kind === "item" ? [m.todo.id] : m.todos.map(t => t.id)).sort()).toEqual(source.map(t => t.id).sort());
+    expect(JSON.stringify(source)).toBe(before);
+    for (let lane = 0; lane < 3; lane++) {
+      const sameLane = markers.filter(m => m.lane === lane);
+      for (let i = 1; i < sameLane.length; i++) {
+        expect(Math.min(sameLane[i].anchorMs, end - 108 * 60000) - Math.min(sameLane[i - 1].anchorMs, end - 108 * 60000)).toBeGreaterThanOrEqual(108 * 60000);
+      }
+    }
+  });
+  it("逾期只按截止时间判断，不移动锚点、不误标完成任务", () => {
+    const now = +new Date("2026-09-14T14:00:00");
+    const past = { ...todo("past", "09:30"), dueDate: "2026-09-14T10:00:00" };
+    expect(isTodoOverdue(past, now)).toBe(true);
+    expect(todoAnchorMs(past)).toBe(+new Date("2026-09-14T09:30:00"));
+    expect(isTodoOverdue(todo("only-start"), now)).toBe(false);
+    expect(isTodoOverdue({ ...past, status: "completed" }, now)).toBe(false);
+    expect(isTodoOverdue({ ...past, status: "cancelled" }, now)).toBe(false);
+    expect(isTodoOverdue({ ...past, dueDate: "2026-09-14" }, now)).toBe(false);
+    expect(isTodoOverdue({ ...past, dueDate: "2026-09-13" }, now)).toBe(true);
+    expect(isTodoOverdue({ ...past, dueDate: "invalid" }, now)).toBe(false);
+  });
   it("午夜边界向内显示的标题仍参与碰撞计算", () => {
     const markers = buildDetailedTodoMarkers([todo("a", "22:40"), todo("b", "23:59")], 90, 4, end);
     expect(markers.map(m => m.lane)).toEqual([0, 1]);
