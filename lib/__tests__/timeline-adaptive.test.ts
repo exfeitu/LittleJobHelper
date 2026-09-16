@@ -1,145 +1,89 @@
 import { describe, expect, it } from "vitest";
-import {
-  ADAPTIVE_VIEW_DAYS,
-  adaptiveViewForDays,
-  adaptiveViewScale,
-  adjacentAdaptiveView,
-  buildTimelineWindow,
-  localDateKey,
-  shiftFocusDate,
-} from "@/lib/timeline-adaptive";
-
-describe("adaptive timeline view model", () => {
-  it("maps continuous visible days into the four explicit views", () => {
-    expect(adaptiveViewForDays(1)).toBe("day");
-    expect(adaptiveViewForDays(3)).toBe("three");
-    expect(adaptiveViewForDays(7)).toBe("week");
-    expect(adaptiveViewForDays(30)).toBe("month");
-  });
-
-  it("keeps canonical day counts and scales", () => {
-    expect(ADAPTIVE_VIEW_DAYS).toEqual({ day: 1, three: 3, week: 7, month: 30 });
-    expect(adaptiveViewScale("day")).toBe(1);
-    expect(adaptiveViewScale("week")).toBeCloseTo(1 / 7);
-  });
-});
-describe("adaptive timeline date windows", () => {
-  it("builds a local-day aligned window", () => {
-    const window = buildTimelineWindow("2026-09-14T18:30:00+08:00", "three");
-    expect(localDateKey(window.start)).toBe("2026-09-14");
-    expect(window.dayCount).toBe(3);
-    expect(localDateKey(new Date(window.end.getTime() - 1))).toBe("2026-09-16");
-  });
-
-  it("moves by the current view span", () => {
-    expect(shiftFocusDate("2026-09-14", "day", 1)).toBe("2026-09-15");
-    expect(shiftFocusDate("2026-09-14", "week", 1)).toBe("2026-09-21");
-    expect(shiftFocusDate("2026-09-14", "three", -1)).toBe("2026-09-11");
-  });
-
-  it("moves between adjacent semantic zoom levels", () => {
-    expect(adjacentAdaptiveView("week", "in")).toBe("three");
-    expect(adjacentAdaptiveView("three", "in")).toBe("day");
-    expect(adjacentAdaptiveView("day", "in")).toBe("day");
-    expect(adjacentAdaptiveView("week", "out")).toBe("month");
-    expect(adjacentAdaptiveView("month", "out")).toBe("month");
-  });
-});
-
 import type { EventItem, TodoItem } from "@/types";
-import {
-  buildDetailedTodoMarkers,
-  layoutDetailedEvents,
-  buildDaySummaries,
-  densityLevel,
-  timeOfDayPercent,
-} from "@/lib/timeline-adaptive";
-
-function makeTodo(id: string, time: string, priority: TodoItem["priority"] = "medium"): TodoItem {
-  return {
-    id,
-    title: id,
-    startTime: time,
-    priority,
-    status: "pending",
-    tags: [],
-    parentId: null,
-    updatedAt: "2026-09-14T00:00:00Z",
-  };
-}
-
-function makeEvent(id: string, startTime: string, endTime: string): EventItem {
-  return {
-    id,
-    title: id,
-    startTime,
-    endTime,
-    tags: [],
-    updatedAt: "2026-09-14T00:00:00Z",
-  };
-}
-describe("adaptive timeline overlap layout", () => {
-  it("stagger two nearby todos but clusters three or more", () => {
-    const two = buildDetailedTodoMarkers([
-      makeTodo("a", "2026-09-14T09:00:00"),
-      makeTodo("b", "2026-09-14T09:20:00"),
-    ]);
-    expect(two.map((item) => item.kind)).toEqual(["item", "item"]);
-    expect(two.map((item) => item.kind === "item" ? item.lane : -1)).toEqual([0, 1]);
-
-    const three = buildDetailedTodoMarkers([
-      makeTodo("a", "2026-09-14T09:00:00"),
-      makeTodo("b", "2026-09-14T09:15:00"),
-      makeTodo("c", "2026-09-14T09:30:00"),
-    ]);
-    expect(three).toHaveLength(1);
-    expect(three[0].kind).toBe("cluster");
-    if (three[0].kind === "cluster") expect(three[0].todos).toHaveLength(3);
+import { adaptiveViewForDays, buildDetailedTodoMarkers, layoutDetailedEvents, buildDaySummaries, densityLevel, todoAnchorMs, startOfLocalDay, shiftDate } from "../timeline-adaptive";
+const start = +new Date("2026-09-14T00:00:00");
+const end = +new Date("2026-09-15T00:00:00");
+const todo = (id: string, time = "09:00", priority: TodoItem["priority"] = "medium"): TodoItem => ({
+  id, title: id, startTime: "2026-09-14T" + time + ":00", priority, status: "pending", tags: [], parentId: null, updatedAt: "",
+});
+const event = (id: string, from = "09:00", to = "11:00"): EventItem => ({
+  id, title: id, startTime: "2026-09-14T" + from + ":00", endTime: "2026-09-14T" + to + ":00", tags: [], updatedAt: "",
+});
+describe("自适应模式与日期", () => {
+  it("按阈值切换四种表现，而非一直压缩卡片", () => {
+    expect([1, 1.75, 1.76, 3, 4.5, 4.51, 7, 10, 10.1, 30].map(adaptiveViewForDays))
+      .toEqual(["day", "day", "three", "three", "three", "week", "week", "week", "month", "month"]);
   });
-
-  it("uses at most three event lanes and puts excess overlaps into +N groups", () => {
-    const start = new Date("2026-09-14T00:00:00").getTime();
-    const end = new Date("2026-09-15T00:00:00").getTime();
-    const events = [
-      makeEvent("a", "2026-09-14T09:00:00", "2026-09-14T11:00:00"),
-      makeEvent("b", "2026-09-14T09:10:00", "2026-09-14T10:30:00"),
-      makeEvent("c", "2026-09-14T09:20:00", "2026-09-14T10:20:00"),
-      makeEvent("d", "2026-09-14T09:30:00", "2026-09-14T10:00:00"),
-    ];
-    const layout = layoutDetailedEvents(events, start, end);
-    expect(layout.visible).toHaveLength(3);
-    expect(layout.visible.map((item) => item.lane)).toEqual([0, 1, 2]);
-    expect(layout.overflow).toHaveLength(1);
-    expect(layout.overflow[0].events.map((event) => event.id)).toEqual(["d"]);
+  it("本地日期跨月导航", () => {
+    expect(shiftDate("2026-09-30", 1)).toBe("2026-10-01");
+    expect(startOfLocalDay("2026-09-14").getDate()).toBe(14);
   });
 });
-describe("adaptive timeline summaries", () => {
-  it("summarizes todo priorities and work hours per day", () => {
-    const start = new Date("2026-09-14T00:00:00").getTime();
-    const summaries = buildDaySummaries(
-      start,
-      2,
-      [
-        makeTodo("h", "2026-09-14T09:00:00", "high"),
-        makeTodo("m", "2026-09-14T10:00:00", "medium"),
-        makeTodo("l", "2026-09-15T10:00:00", "low"),
-      ],
-      [
-        makeEvent("e1", "2026-09-14T09:00:00", "2026-09-14T11:30:00"),
-        makeEvent("e2", "2026-09-15T14:00:00", "2026-09-15T15:00:00"),
-      ],
-    );
-
-    expect(summaries[0].priorityCounts).toEqual({ high: 1, medium: 1, low: 0 });
-    expect(summaries[0].eventHours).toBeCloseTo(2.5);
-    expect(summaries[1].priorityCounts.low).toBe(1);
-    expect(summaries[1].eventHours).toBeCloseTo(1);
+describe("真实时间待办节点", () => {
+  it("午夜边界向内显示的标题仍参与碰撞计算", () => {
+    const markers = buildDetailedTodoMarkers([todo("a", "22:40"), todo("b", "23:59")], 90, 4, end);
+    expect(markers.map(m => m.lane)).toEqual([0, 1]);
+    expect(markers[1].anchorMs).toBe(todoAnchorMs(todo("b", "23:59")));
   });
-
-  it("converts counts and times into compact display helpers", () => {
-    expect(densityLevel(0, 10)).toBe(0);
-    expect(densityLevel(5, 10)).toBe(3);
-    expect(densityLevel(10, 10)).toBe(5);
-    expect(timeOfDayPercent("2026-09-14T12:00:00")).toBeCloseTo(50);
+  it.each([2, 3])("%i 个相近任务保持独立并向下错层", (count) => {
+    const source = Array.from({ length: count }, (_, i) => todo(String(i), "09:" + String(i * 10).padStart(2, "0")));
+    const markers = buildDetailedTodoMarkers(source);
+    expect(markers).toHaveLength(count);
+    expect(markers.map(m => m.lane)).toEqual(Array.from({ length: count }, (_, i) => i));
+    markers.forEach((m, i) => { expect(m.kind).toBe("item"); expect(m.anchorMs).toBe(todoAnchorMs(source[i])); });
+  });
+  it.each([4, 20])("%i 个接近任务聚合，内容无遗漏", count => {
+    const source = Array.from({ length: count }, (_, i) => todo(String(i)));
+    const [marker] = buildDetailedTodoMarkers(source);
+    expect(marker.kind).toBe("cluster");
+    if (marker.kind === "cluster") expect(marker.todos).toHaveLength(count);
+    expect(marker.anchorMs).toBe(todoAnchorMs(source[0]));
+  });
+  it("远离的节点复用第一层，三天模式可将两个节点聚合", () => {
+    expect(buildDetailedTodoMarkers([todo("a"), todo("b", "12:00")]).map(m => m.lane)).toEqual([0, 0]);
+    expect(buildDetailedTodoMarkers([todo("a"), todo("b", "09:10")], 90, 2)[0].kind).toBe("cluster");
+  });
+  it("未设时间和取消项不虚构位置；完成项保留", () => {
+    const source = [{ ...todo("a"), startTime: undefined }, { ...todo("b"), status: "cancelled" as const }, { ...todo("c"), status: "completed" as const }];
+    expect(buildDetailedTodoMarkers(source).map(m => m.id)).toEqual(["c"]);
+  });
+});
+describe("记录分层及真实持续时间", () => {
+  it("前三条分到三层，第四条进入溢出列表", () => {
+    const layout = layoutDetailedEvents(["a", "b", "c", "d"].map(id => event(id)), start, end);
+    expect(layout.visible.map(e => e.lane)).toEqual([0, 1, 2]);
+    expect(layout.overflow[0].events.map(e => e.id)).toEqual(["d"]);
+  });
+  it("相邻区间不重叠；极短记录不人为扩宽", () => {
+    const layout = layoutDetailedEvents([event("a", "09:00", "10:00"), event("b", "10:00", "10:01")], start, end);
+    expect(layout.visible.map(e => e.lane)).toEqual([0, 0]);
+    expect(layout.visible[1].leftPercent).toBeCloseTo(100 * 10 / 24);
+    expect(layout.visible[1].widthPercent).toBeCloseTo(100 / 1440);
+  });
+  it("跨日区间裁剪，无效和逆序记录排除", () => {
+    const overnight = { ...event("a"), startTime: "2026-09-13T23:00:00", endTime: "2026-09-14T01:00:00" };
+    const layout = layoutDetailedEvents([overnight, event("b", "12:00", "11:00"), { ...event("c"), endTime: "invalid" }], start, end);
+    expect(layout.visible).toHaveLength(1);
+    expect(layout.visible[0].leftPercent).toBe(0);
+    expect(layout.visible[0].widthPercent).toBeCloseTo(100 / 24);
+  });
+});
+describe("每日统计与月密度", () => {
+  it("7 天统计高中低、完成项与跨日工时，未安排任务不重复计入", () => {
+    const summaries = buildDaySummaries(start, 7, [
+      todo("h", "09:00", "high"), todo("m"), { ...todo("l", "10:00", "low"), status: "completed" },
+      { ...todo("u"), startTime: undefined },
+    ], [event("a", "09:00", "11:30"), { ...event("b"), startTime: "2026-09-14T23:00:00", endTime: "2026-09-15T02:00:00" }]);
+    expect(summaries).toHaveLength(7);
+    expect(summaries[0].priorityCounts).toEqual({ high: 1, medium: 1, low: 1 });
+    expect(summaries[0].eventHours).toBe(3.5);
+    expect(summaries[1].eventHours).toBe(2);
+    expect(summaries[1].events).toHaveLength(1);
+    expect(summaries.slice(1).every(d => d.todos.length === 0)).toBe(true);
+  });
+  it("相对强度映射到 0—5，正确处理空值和上限", () => {
+    expect([0, 1, 2, 4, 6, 8, 10, 20].map(v => densityLevel(v, 10))).toEqual([0, 1, 1, 2, 3, 4, 5, 5]);
+    expect(densityLevel(1, 0)).toBe(0);
+    expect(densityLevel(NaN, 10)).toBe(0);
   });
 });

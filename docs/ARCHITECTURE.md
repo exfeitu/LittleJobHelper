@@ -18,7 +18,7 @@ styles/                     # CSS 按功能模块拆分（顺序即级联顺序�
   modal.css                 # 模态弹窗、各面板、按钮
 components/
   app-header.tsx            # 三页共用顶部导航栏（含同步状态指示）
-  day-timeline.tsx          # 横向时间轴（缩放、虚拟化、轻量任务节点、工作记录时间条）
+  day-timeline.tsx          # 自适应时间轴工具栏、导航、滚轮、拖拽及详情选择
   diary-timeline.tsx        # 文字日记时间轴
   search-panel.tsx          # 搜索结果（命中高亮）
   todo-tree.tsx             # 递归待办树（紧凑摘要、详情展开、批量选择）
@@ -47,7 +47,7 @@ lib/
   storage-local.ts          # LocalStorage、自定义标签、JSON 导入导出
   storage-gist.ts           # Gist 云同步、同步状态
   utils.ts                  # 纯函数：syncLinkedItems、树构建、格式化、拼音、genId
-  timeline-layout.ts        # 时间轴纯布局逻辑（任务分桶、工作记录时间条 lane、周聚合）
+  timeline-adaptive.ts      # 时间轴纯函数（模式、待办碰撞、记录 lane/overflow、统计、密度）
   memo.ts                   # 备忘录纯函数（正文转文本、搜索、排序、进度）
   constants.ts              # 共享常量（BASE_TAGS）
   sample-data.ts            # 示例数据（当前未使用，保留作参考）
@@ -141,7 +141,7 @@ Memo 操作 → setMemos()（独立撤销历史）──────────
 ## 工具函数分工
 
 - `lib/utils.ts`：纯函数，无副作用（`syncLinkedItems`、`buildTodoTree`、格式化、拼音、`genId`）
-- `lib/timeline-layout.ts`：时间轴纯布局逻辑（可单测）
+- `lib/timeline-adaptive.ts`：时间轴纯布局逻辑（可单测）
 - `lib/storage-*.ts`：有副作用（`localStorage`、`fetch`、`FileReader`、`Blob`）
 - 日期格式化统一用 `Intl.DateTimeFormat("zh-CN", ...)`，不用 `moment`/`dayjs`
 
@@ -155,18 +155,15 @@ Memo 操作 → setMemos()（独立撤销历史）──────────
 
 ## 时间轴缩放与原生时间表达
 
-- **公式**：`visibleDays = BASE_VISIBLE_DAYS / scale`（BASE_VISIBLE_DAYS = 1）
-- **范围**：scale 0.03（~33 天）到 24（~1 小时）
-- **密度分级**：`visibleDays <= 2` 为 low，`<= 10` 为 medium，`> 10` 为 high
-- **任务/记录分区**：待办固定在主轴上方的高/中/低三行；工作记录只在主轴下方，两类内容不再互相避让
-- **轻量任务节点**：low 密度按 2 小时、medium 按天、high 按周分桶；节点使用桶内最早任务的真实时间作为锚点，单项显示标题，多项显示数量并点击展开
-- **工作记录时间条**：layoutTimelineEventStrips() 保留真实开始位置和真实持续时长；常驻信息仅为开始时间、标题和关联数，持续时间由底部细线表达
-- **冲突处理**：工作记录标题只向下分 lane，不再横向漂移、拉长连接线或显示常驻详情卡；最多使用 5 条可见 lane
-- **固定高度**：时间轴保持 360px，不随任务数量无限增高
-- **光标中心缩放**：RAF 批处理 + useLayoutEffect 同步 scrollLeft
-- **视口虚拟化**：仅渲染可见范围 ±0.5 屏幕宽的元素
-- **拖拽平移**：鼠标左键按住拖动
-- **布局逻辑**：`lib/timeline-layout.ts` 保持纯函数，覆盖任务分桶、真实时间条布局、lane 与周计数，便于单测
+- **模式**：固定 1/3/7/30 天；滚轮按 1.75/4.5/10 天阈值切换表现，不无限压缩同一种 UI。
+- **真实坐标**：日期按本地零点划分；待办取安排时间、否则截止时间。未安排任务单独列出，取消项不绘制，完成项保留勾选点。
+- **待办碰撞**：按画布宽度换算标签占位；2–3 项分层，4 项以上聚合。三天模式隐藏标题，邻近节点聚合。午夜标签向内收，时间锚点不移动。
+- **工作块**：实际开始/结束决定位置与宽度，跨日裁切；最多 3 个 lane，额外记录通过当天 `+N记录` 列表访问，不改变时长或横移。
+- **概览**：7 天展示每日高/中/低数量、记录数及工时；30 天按待办数/总工时绘制 0–5 级相对密度，悬停查看统计，点击回到当天。工时为记录时长相加，跨日分摊，不对重叠时间去重。
+- **详情**：单项点击选中 ID，侧栏从最新数据派生内容；只有编辑按钮调用已有表单。概览视图不预留空侧栏。
+- **交互**：日期跳转、前后时间段、今天、红色当前时间线；拖拽平移，拖过画布边界可切换日期。窄屏允许内部横向滚动，详情置于下方。
+- **结构**：`lib/timeline-adaptive.ts` 负责纯计算；`AdaptiveDayView` 被 1/3 天共用，周/月单独渲染统计。旧二维装箱及浮动卡片路径已移除。
+- **验证**：Vitest 覆盖聚合、lane、跨日统计和密度；Playwright 覆盖详情编辑、四档切换、月视图跳转、拖拽及窄屏。系统保留 3536 时可仅为测试设置 `E2E_PORT`，不改变 `npm run dev` 端口。
 
 ## 数据版本迁移
 

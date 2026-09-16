@@ -127,8 +127,7 @@ button {
 .todo-card h4,
 .diary-entry h4,
 .search-card h4,
-.focus-item h3,
-.line-event h4 {
+.focus-item h3 {
   font-weight: 600;
   letter-spacing: 0.02em;
 }
@@ -146,7 +145,6 @@ button {
 .search-card p,
 .focus-item p,
 .architecture-card li,
-.line-event p,
 .timeline-note {
   color: var(--muted);
   line-height: 1.7;
@@ -294,8 +292,7 @@ button {
 .focus-item h3,
 .search-card h4,
 .todo-card h4,
-.diary-entry h4,
-.line-event h4 {
+.diary-entry h4 {
   margin: 0 0 8px;
 }
 
@@ -341,11 +338,4 @@ button {
 
 .section-head-tight h2 {
   margin: 0;
-}
-
-.timeline-summary {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 8px;
 }

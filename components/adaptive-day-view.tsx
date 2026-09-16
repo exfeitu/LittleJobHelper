@@ -1,210 +1,83 @@
 "use client";
-
-import { type CSSProperties, useMemo, useState } from "react";
+import { type CSSProperties, useMemo } from "react";
 import type { EventItem, TodoItem } from "@/types";
-import {
-  buildDetailedTodoMarkers,
-  layoutDetailedEvents,
-  startOfLocalDay,
-  timeOfDayPercent,
-} from "@/lib/timeline-adaptive";
-import {
-  TODO_PRIORITY_COLORS,
-  formatClock,
-} from "@/lib/timeline-layout";
+import { buildDaySummaries, buildDetailedTodoMarkers, layoutDetailedEvents, shiftDate, startOfLocalDay, PRIORITY_COLORS, STATUS_LABEL, formatClock, eventColor, dateLabel } from "@/lib/timeline-adaptive";
+import { TimelinePopover } from "./timeline-popover";
 
-type AdaptiveDayViewProps = {
-  date: Date;
-  events: EventItem[];
-  todos: TodoItem[];
-  onEventClick?: (event: EventItem) => void;
-  onTodoClick?: (todo: TodoItem) => void;
+export type AdaptiveDayViewProps = {
+  date: Date; events: EventItem[]; todos: TodoItem[]; now: number;
+  compact?: boolean; width: number;
+  onEventClick: (event: EventItem) => void; onTodoClick: (todo: TodoItem) => void;
 };
-
-const EVENT_PALETTE = ["#68b7f0", "#65cfab", "#a78cf0", "#f2b866", "#ef8fa6"];
-
-function eventColor(id: string) {
-  let hash = 0;
-  for (const char of id) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
-  return EVENT_PALETTE[hash % EVENT_PALETTE.length];
-}
-export function AdaptiveDayView({
-  date,
-  events,
-  todos,
-  onEventClick,
-  onTodoClick,
-}: AdaptiveDayViewProps) {
-  const [openGroupId, setOpenGroupId] = useState<string | null>(null);
-  const dayStart = useMemo(() => startOfLocalDay(date), [date]);
-  const dayEnd = useMemo(() => {
-    const end = new Date(dayStart);
-    end.setDate(end.getDate() + 1);
-    return end;
-  }, [dayStart]);
-
-  const dayTodos = useMemo(
-    () => todos.filter((todo) => {
-      const value = todo.startTime || todo.dueDate;
-      if (!value || todo.status === "cancelled") return false;
-      const time = new Date(value).getTime();
-      return time >= dayStart.getTime() && time < dayEnd.getTime();
-    }),
-    [todos, dayStart, dayEnd],
-  );
-
-  const dayEvents = useMemo(
-    () => events.filter((event) => {
-      const start = new Date(event.startTime).getTime();
-      const end = new Date(event.endTime).getTime();
-      return start < dayEnd.getTime() && end > dayStart.getTime();
-    }),
-    [events, dayStart, dayEnd],
-  );
-  const markers = useMemo(() => buildDetailedTodoMarkers(dayTodos), [dayTodos]);
-  const eventLayout = useMemo(
-    () => layoutDetailedEvents(dayEvents, dayStart.getTime(), dayEnd.getTime(), 3),
-    [dayEvents, dayStart, dayEnd],
-  );
-
-  const now = new Date();
-  const isToday = startOfLocalDay(now).getTime() === dayStart.getTime();
-  const nowPercent = isToday ? timeOfDayPercent(now) : null;
-  const hourMarks = Array.from({ length: 13 }, (_, index) => index * 2);
-
-  return (
-    <div className="adaptive-day-view">
-      <div className="adaptive-day-axis-header">
-        <div className="adaptive-day-axis-spacer" />
-        <div className="adaptive-day-axis-scale">
-          {hourMarks.map((hour) => (
-            <span key={hour} style={{ left: `${(hour / 24) * 100}%` }}>
-              {String(hour).padStart(2, "0")}:00
-            </span>
-          ))}
-        </div>
+/** 1 天与 3 天共用同一真实时间坐标和分层算法。 */
+export function AdaptiveDayView({ date, events, todos, now, compact = false, width, onEventClick, onTodoClick }: AdaptiveDayViewProps) {
+  const start = +startOfLocalDay(date);
+  const end = +startOfLocalDay(shiftDate(date, 1));
+  const duration = end - start;
+  const day = useMemo(() => buildDaySummaries(start, 1, todos, events)[0], [start, todos, events]);
+  const markers = useMemo(() => buildDetailedTodoMarkers(day.todos,
+    (compact ? 56 : 132) / width * duration / 60_000, compact ? 2 : 4, end), [day.todos, compact, width, duration, end]);
+  const layout = useMemo(() => layoutDetailedEvents(day.events, start, end), [day.events, start, end]);
+  const ticks = Array.from({ length: compact ? 3 : 24 }, (_, i) => compact ? i * 12 : i);
+  return <section className={"at-day" + (compact ? " at-day-compact" : "")} style={{ width }} aria-label={dateLabel(date)}>
+    <div className="at-date-heading">{dateLabel(date)}</div>
+    <div className="at-hour-axis">
+      {ticks.map(hour => {
+        const tick = new Date(start);
+        tick.setHours(hour);
+        return <span key={hour} style={{ left: ((+tick - start) / duration * 100) + "%" }} className={hour === 24 ? "at-last-tick" : ""}>{String(hour).padStart(2, "0")}:00</span>;
+      })}
+    </div>
+    <div className="at-day-body">
+      {ticks.map(hour => {
+        const tick = new Date(start); tick.setHours(hour);
+        return <i key={hour} className="at-gridline" style={{ left: ((+tick - start) / duration * 100) + "%" }} />;
+      })}
+      {now >= start && now < end && <div className="at-now" style={{ left: (now - start) / duration * 100 + "%" }}><span>{formatClock(now)}</span></div>}
+      <div className="at-todos">
+        {markers.map(marker => {
+          const left = (marker.anchorMs - start) / duration * 100;
+          const style = { left: left + "%", top: 14 + marker.lane * (compact ? 20 : 48) } as CSSProperties;
+          if (marker.kind === "cluster") return <div key={marker.id} className="at-marker" style={style}>
+            <span className="at-pin at-cluster-pin" style={{ "--task-color": PRIORITY_COLORS[marker.todos.some(t => t.priority === "high") ? "high" : marker.todos.some(t => t.priority === "medium") ? "medium" : "low"] } as CSSProperties} />
+            <TimelinePopover label={marker.todos.length + "项待办"} className={"at-cluster" + (width * (1 - left / 100) < 56 ? " at-cluster-edge" : "")} trigger={marker.todos.length + "项"}>
+              {marker.todos.map(todo => <button type="button" key={todo.id} onClick={() => onTodoClick(todo)}>
+                <i style={{ background: PRIORITY_COLORS[todo.priority] }} /><span>{todo.title}</span><small>{formatClock(todo.startTime || todo.dueDate!)}</small>
+              </button>)}
+            </TimelinePopover>
+          </div>;
+          const todo = marker.todo;
+          return <button key={marker.id} type="button" className={"at-marker at-todo at-status-" + todo.status}
+            style={{ ...style, "--task-color": PRIORITY_COLORS[todo.priority] } as CSSProperties}
+            aria-label={todo.title + "，" + formatClock(marker.anchorMs) + "，" + STATUS_LABEL[todo.status]}
+            title={todo.title} onClick={() => onTodoClick(todo)}>
+            <span className="at-pin">{todo.status === "completed" ? "✓" : ""}</span>
+            {!compact && <span className="at-todo-label" style={{ width: 116, marginLeft: Math.min(0, width * (1 - left / 100) - 132) }}>
+              <small>{formatClock(marker.anchorMs)}</small><strong>{todo.title}</strong>
+            </span>}
+          </button>;
+        })}
       </div>
-
-      <div className="adaptive-day-body">
-        <div className="adaptive-day-row-labels">
-          <strong>待办任务</strong>
-          <strong>工作记录<small>最多显示3层</small></strong>
-        </div>
-        <div className="adaptive-day-canvas">
-          {hourMarks.map((hour) => (
-            <i
-              key={hour}
-              className="adaptive-day-gridline"
-              style={{ left: `${(hour / 24) * 100}%` }}
-            />
-          ))}
-          {nowPercent !== null ? (
-            <div className="adaptive-now-line" style={{ left: `${nowPercent}%` }}>
-              <span>{formatClock(now.toISOString())}</span>
-            </div>
-          ) : null}
-
-          <div className="adaptive-task-zone">
-            {markers.map((marker) => {
-              const left = (marker.anchorMs - dayStart.getTime()) / (24 * 60 * 60 * 1000) * 100;
-              if (marker.kind === "cluster") {
-                const isOpen = openGroupId === marker.id;
-                return (
-                  <div key={marker.id} className="adaptive-task-marker adaptive-task-cluster" style={{ left: `${left}%` }}>
-                    <button type="button" onClick={() => setOpenGroupId(isOpen ? null : marker.id)}>
-                      <span className="adaptive-cluster-dot" />
-                      <strong>{marker.todos.length} 项</strong>
-                    </button>
-                    {isOpen ? (
-                      <div className="adaptive-overlap-popover">
-                        <strong>{marker.todos.length} 个重叠待办</strong>
-                        {marker.todos.map((todo) => (
-                          <button key={todo.id} type="button" onClick={() => onTodoClick?.(todo)}>
-                            <span style={{ background: TODO_PRIORITY_COLORS[todo.priority] }} />
-                            <b>{todo.title}</b>
-                            <small>{formatClock((todo.startTime || todo.dueDate)!)}</small>
-                          </button>
-                        ))}
-                      </div>
-                    ) : null}
-                  </div>
-                );
-              }
-              const color = TODO_PRIORITY_COLORS[marker.todo.priority];
-              const style = {
-                left: `${left}%`,
-                "--task-color": color,
-                "--task-lane": marker.lane,
-              } as CSSProperties;
-              return (
-                <button
-                  key={marker.id}
-                  type="button"
-                  className="adaptive-task-marker adaptive-task-item"
-                  style={style}
-                  onClick={() => onTodoClick?.(marker.todo)}
-                  title={marker.todo.title}
-                >
-                  <span className="adaptive-task-pin" />
-                  <span className="adaptive-task-copy">
-                    <small>{formatClock((marker.todo.startTime || marker.todo.dueDate)!)}</small>
-                    <strong>{marker.todo.title}</strong>
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-
-          <div className="adaptive-event-zone">
-            {eventLayout.visible.map((band) => {
-              const color = eventColor(band.event.id);
-              const style = {
-                left: `${band.leftPercent}%`,
-                width: `${band.widthPercent}%`,
-                "--event-color": color,
-                "--event-lane": band.lane,
-              } as CSSProperties;
-              return (
-                <button
-                  key={band.event.id}
-                  type="button"
-                  className="adaptive-event-band"
-                  style={style}
-                  onClick={() => onEventClick?.(band.event)}
-                  title={band.event.title}
-                >
-                  <small>{formatClock(band.event.startTime)} — {formatClock(band.event.endTime)}</small>
-                  <strong>{band.event.title}</strong>
-                </button>
-              );
-            })}
-
-            {eventLayout.overflow.map((group) => {
-              const left = (group.anchorMs - dayStart.getTime()) / (24 * 60 * 60 * 1000) * 100;
-              const isOpen = openGroupId === group.id;
-              return (
-                <div key={group.id} className="adaptive-event-overflow" style={{ left: `${left}%` }}>
-                  <button type="button" onClick={() => setOpenGroupId(isOpen ? null : group.id)}>
-                    +{group.events.length} 记录
-                  </button>
-                  {isOpen ? (
-                    <div className="adaptive-overlap-popover adaptive-event-popover">
-                      <strong>{group.events.length} 条重叠记录</strong>
-                      {group.events.map((event) => (
-                        <button key={event.id} type="button" onClick={() => onEventClick?.(event)}>
-                          <span style={{ background: eventColor(event.id) }} />
-                          <b>{event.title}</b>
-                          <small>{formatClock(event.startTime)}</small>
-                        </button>
-                      ))}
-                    </div>
-                  ) : null}
-                </div>
-              );
-            })}
-          </div>
-        </div>
+      <div className="at-events">
+        {layout.visible.map(band => {
+          const pixels = band.widthPercent / 100 * width;
+          return <button key={band.event.id} type="button" className="at-event"
+            style={{ left: band.leftPercent + "%", width: band.widthPercent + "%", top: 10 + band.lane * 38, background: eventColor(band.event.id) }}
+            data-lane={band.lane} data-event-id={band.event.id}
+            aria-label={band.event.title + "，" + formatClock(band.event.startTime) + "至" + formatClock(band.event.endTime)}
+            title={band.event.title + " " + formatClock(band.event.startTime) + "–" + formatClock(band.event.endTime)}
+            onClick={() => onEventClick(band.event)}>
+            {pixels >= (compact ? 65 : 45) && <span>{!compact && pixels >= 110 && <small>{formatClock(band.event.startTime)}–{formatClock(band.event.endTime)}</small>}<strong>{band.event.title}</strong></span>}
+          </button>;
+        })}
+        {layout.overflow.map(group => <div className="at-overflow" key={group.id} style={{ left: Math.min(width - 90, (group.anchorMs - start) / duration * width) }}>
+          <TimelinePopover label={"+" + group.events.length + "记录"} trigger={"+" + group.events.length + "记录"}>
+            {group.events.map(event => <button type="button" key={event.id} onClick={() => onEventClick(event)}>
+              <span>{event.title}</span><small>{formatClock(event.startTime)}–{formatClock(event.endTime)}</small>
+            </button>)}
+          </TimelinePopover>
+        </div>)}
       </div>
     </div>
-  );
+  </section>;
 }

@@ -50,7 +50,7 @@ test("全局搜索：主页搜「工资」命中备忘录", async ({ page }) => 
 
   // 回到主页全局搜索
   await page.goto("/LittleJobHelper");
-  await page.getByLabel("搜索").fill("工资");
+  await page.getByRole("textbox", { name: "搜索", exact: true }).fill("工资");
   await expect(page.getByText("工资核算流程复盘").first()).toBeVisible();
 });
 

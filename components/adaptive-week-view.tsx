@@ -1,77 +1,15 @@
 "use client";
-
-import { useMemo } from "react";
-import type { EventItem, TodoItem } from "@/types";
-import { buildDaySummaries } from "@/lib/timeline-adaptive";
-
-type Props = {
-  startDate: Date;
-  events: EventItem[];
-  todos: TodoItem[];
-  onDayClick?: (dateKey: string) => void;
-};
-
-function dayLabel(date: Date) {
-  return new Intl.DateTimeFormat("zh-CN", {
-    month: "numeric",
-    day: "numeric",
-  }).format(date);
-}
-
-function weekDayLabel(date: Date) {
-  return new Intl.DateTimeFormat("zh-CN", {
-    weekday: "short",
-  }).format(date);
-}
-
-export function AdaptiveWeekView({
-  startDate,
-  events,
-  todos,
-  onDayClick,
-}: Props) {
-  const startMs = useMemo(() => {
-    const date = new Date(startDate);
-    date.setHours(0, 0, 0, 0);
-    return date.getTime();
-  }, [startDate]);
-
-  const days = useMemo(
-    () => buildDaySummaries(startMs, 7, todos, events),
-    [startMs, todos, events],
-  );
-
-  return (
-    <div className="adaptive-week-view">
-      <div className="adaptive-week-labels">
-        <span />
-        <strong>待办</strong>
-        <strong>工作记录</strong>
-      </div>
-      <div className="adaptive-week-grid">
-        {days.map((day) => (
-          <button
-            key={day.dateKey}
-            type="button"
-            className="adaptive-week-day"
-            onClick={() => onDayClick?.(day.dateKey)}
-          >
-            <div className="adaptive-week-day-head">
-              <strong>{dayLabel(day.date)}</strong>
-              <span>{weekDayLabel(day.date)}</span>
-            </div>
-            <div className="adaptive-week-priorities">
-              <span className="high"><i />{day.priorityCounts.high}</span>
-              <span className="medium"><i />{day.priorityCounts.medium}</span>
-              <span className="low"><i />{day.priorityCounts.low}</span>
-            </div>
-            <div className="adaptive-week-work">
-              <strong>{day.events.length} 条</strong>
-              <span>{day.eventHours.toFixed(1)}h</span>
-            </div>
-          </button>
-        ))}
-      </div>
-    </div>
-  );
+import type { DayTimelineSummary } from "@/lib/timeline-adaptive";
+import { PRIORITY_COLORS, PRIORITY_LABEL } from "@/lib/timeline-adaptive";
+import { TimelineSummaryNow } from "./timeline-summary-now";
+export function AdaptiveWeekView({ days, onDayClick, now }: { days: DayTimelineSummary[]; onDayClick: (key: string) => void; now: number }) {
+  return <div className="at-week">{days.map(day => <button type="button" key={day.dateKey} className="at-week-day"
+    aria-label={day.dateKey + "，查看当天"} onClick={() => onDayClick(day.dateKey)}>
+    <div className="at-week-date"><strong>{day.date.getMonth() + 1}/{day.date.getDate()}</strong><small>{day.date.toLocaleDateString("zh-CN", { weekday: "short" })}</small></div>
+    <div className="at-week-todos">{(["high", "medium", "low"] as const).map(priority => <span key={priority}>
+      <i style={{ background: PRIORITY_COLORS[priority] }} />{PRIORITY_LABEL[priority]} {day.priorityCounts[priority]}
+    </span>)}</div>
+    <div className="at-week-events"><strong>{day.events.length} 条</strong><span>{day.eventHours.toFixed(1)}h</span></div>
+    <TimelineSummaryNow date={day.date} now={now} />
+  </button>)}</div>;
 }

@@ -19,12 +19,12 @@ test("主流程：新建任务 → 搜索 → 编辑 → 删除", async ({ page 
   await expect(page.getByText(title).first()).toBeVisible();
 
   // 搜索命中
-  await page.getByLabel("搜索").fill("冒烟");
-  await expect(page.getByText(title).first()).toBeVisible();
+  await page.getByRole("textbox", { name: "搜索", exact: true }).fill("冒烟");
+  await expect(page.getByRole("search").getByRole("heading", { name: title })).toBeVisible();
 
   // 清空搜索，进入待办树编辑
-  await page.getByLabel("搜索").fill("");
-  await page.getByText(title).first().click();
+  await page.getByRole("textbox", { name: "搜索", exact: true }).fill("");
+  await page.getByRole("button", { name: `编辑任务：${title}`, exact: true }).click();
 
   // 编辑弹窗中删除（确认对话框）
   page.once("dialog", (dialog) => dialog.accept());

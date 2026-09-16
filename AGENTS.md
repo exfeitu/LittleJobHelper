@@ -51,14 +51,14 @@ npm test        # vitest 单元测试
 | `app/calendar/page.tsx` | 日历页，共享 `useAppData()` hook |
 | `app/memo/page.tsx` | 备忘录/知识库页：复盘心得 + 周期备忘 |
 | `components/app-header.tsx` | 三页共用的顶部导航栏 |
-| `components/day-timeline.tsx` | 横向时间轴（缩放、虚拟化、拖拽、聚合交互） |
+| `components/day-timeline.tsx` | 自适应时间轴（1/3/7/30 天切换、滚轮、拖拽、详情选择） |
 | `components/memo-*.tsx` | 备忘录列表、编辑、详情与步骤编辑 |
 | `lib/storage.ts` | 存储层统一出口（re-export） |
 | `lib/storage-migrate.ts` | 数据版本迁移系统 |
 | `lib/storage-local.ts` | LocalStorage、自定义标签、JSON 导入导出 |
 | `lib/storage-gist.ts` | Gist 云同步、同步状态 |
 | `lib/utils.ts` | 纯函数：`syncLinkedItems`、树构建、格式化、拼音 |
-| `lib/timeline-layout.ts` | 时间轴纯布局逻辑（密度降级、低优先级聚合、二维装箱、lane/周聚合） |
+| `lib/timeline-adaptive.ts` | 时间轴纯函数（待办碰撞聚合、最多 3 层记录、逐日统计、密度等级） |
 | `lib/memo.ts` | 备忘录纯函数：富文本转文本、搜索文本、排序、进度 |
 | `lib/constants.ts` | 共享常量（BASE_TAGS） |
 | `hooks/use-app-data.ts` | 共享 hook：数据加载、持久化、云同步、撤销 |

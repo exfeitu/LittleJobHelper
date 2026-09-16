@@ -55,75 +55,6 @@ export default function HomePage() {
   const [todoSelectionMode, setTodoSelectionMode] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  // 时间轴缩放控制（状态提升到 header 工具栏）
-  const [timelineScale, setTimelineScale] = useState(1 / 7);
-  const [scrollToTodayTrigger, setScrollToTodayTrigger] = useState(0);
-  const MIN_SCALE = 0.03;
-  const MAX_SCALE = 24;
-  const BASE_VISIBLE_DAYS = 1;
-  const visibleDays = BASE_VISIBLE_DAYS / timelineScale;
-
-  // "今天"按钮：单击→日期选择；双击→30天视图+回到今天
-  const todayClickTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const todayClickCount = useRef(0);
-  const [showTodayPicker, setShowTodayPicker] = useState(false);
-  const [scrollToDate, setScrollToDate] = useState<string | undefined>(undefined);
-
-  const handleTodayClick = useCallback(() => {
-    todayClickCount.current += 1;
-    if (todayClickCount.current === 1) {
-      todayClickTimer.current = setTimeout(() => {
-        // 单击 → 7天视图 + 回到今天
-        setTimelineScale(BASE_VISIBLE_DAYS / 7);
-        setScrollToTodayTrigger((v) => v + 1);
-        todayClickCount.current = 0;
-      }, 250);
-    } else if (todayClickCount.current >= 2) {
-      if (todayClickTimer.current) clearTimeout(todayClickTimer.current);
-      todayClickCount.current = 0;
-      // 双击 → 日期选择器
-      setShowTodayPicker(true);
-    }
-  }, []);
-
-  const handleTodayPickerChange = useCallback((date: string) => {
-    setShowTodayPicker(false);
-    if (!date) return;
-    setTimelineScale(1.0); // 1天视图
-    setScrollToDate(date);
-  }, []);
-
-  // "X天"按钮：单击→自定义天数；双击→3天视图
-  const daysClickTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const daysClickCount = useRef(0);
-  const [showDaysInput, setShowDaysInput] = useState(false);
-  const [customDays, setCustomDays] = useState("3");
-
-  const handleDaysClick = useCallback(() => {
-    daysClickCount.current += 1;
-    if (daysClickCount.current === 1) {
-      daysClickTimer.current = setTimeout(() => {
-        // 单击 → 恢复3天视图
-        setTimelineScale(0.35);
-        daysClickCount.current = 0;
-      }, 250);
-    } else if (daysClickCount.current >= 2) {
-      if (daysClickTimer.current) clearTimeout(daysClickTimer.current);
-      daysClickCount.current = 0;
-      // 双击 → 自定义天数输入
-      setCustomDays(String(Math.round(BASE_VISIBLE_DAYS / timelineScale * 10) / 10));
-      setShowDaysInput(true);
-    }
-  }, [timelineScale]);
-
-  const handleCustomDaysSubmit = useCallback(() => {
-    setShowDaysInput(false);
-    const days = parseFloat(customDays);
-    if (isNaN(days) || days <= 0) return;
-    const targetScale = BASE_VISIBLE_DAYS / days;
-    setTimelineScale(Math.min(MAX_SCALE, Math.max(MIN_SCALE, +(targetScale).toFixed(4))));
-  }, [customDays]);
-
   const handleTagCreated = addCustomTag;
   const handleTagDeleted = deleteCustomTag;
 
@@ -144,8 +75,6 @@ export default function HomePage() {
   // 待办列表只显示未完成的（未开始/进行中）；已完成/已取消进入归档区
   const activeTodos = useMemo(() => filteredTodos.filter(isTodoActive), [filteredTodos]);
   const archivedTodos = useMemo(() => filteredTodos.filter(isTodoArchived), [filteredTodos]);
-  // 时间轴同样只展示未完成待办，避免已完成卡片造成"还有事没办"的误导（已完成的去归档区查看）
-  const timelineTodos = useMemo(() => todos.filter(isTodoActive), [todos]);
 
   const todoTree = useMemo(() => buildTodoTree(activeTodos), [activeTodos]);
   const archivedTodoTree = useMemo(() => buildTodoTree(archivedTodos), [archivedTodos]);
@@ -383,11 +312,11 @@ export default function HomePage() {
                   <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
                     <h2>时间轴</h2>
                     <HelpIcon tips={[
-                      "🖱 滚轮：缩放时间轴（1小时 ~ 30天）",
-                      "🖱 拖拽滚动条：移动时间窗口",
-                      "👆 点击卡片：编辑工作记录 / 待办",
-                      "📌 菱形标记：待办任务（橙色虚线卡片）",
-                      "● 圆点标记：工作记录（实线卡片）",
+                      "滚轮缩放自动切换 1 / 3 / 7 / 30 天展示密度。",
+                      "拖拽平移，使用日期和前后按钮跳转时间段。",
+                      "点击待办或工作记录先查看右侧详情，再按需编辑。",
+                      "待办圆点表示时间，颜色表示优先级，外圈表示进行中，勾选表示完成。",
+                      "工作块宽度表示真实时长；周视图看统计，月视图看密度。",
                     ]} />
                   </div>
                   <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
@@ -400,50 +329,9 @@ export default function HomePage() {
                     >
                       ↩ 撤销
                     </button>
-                    <button
-                      className="axis-today-button"
-                      type="button"
-                      onClick={handleTodayClick}
-                      title="单击回到今天30天视图 · 双击选择日期"
-                    >
-                      今天
-                    </button>
-                    {showTodayPicker && (
-                      <input
-                        type="date"
-                        className="today-date-picker-inline"
-                        value={new Date().toISOString().slice(0, 10)}
-                        onChange={(e) => handleTodayPickerChange(e.target.value)}
-                        onBlur={() => setShowTodayPicker(false)}
-                        autoFocus
-                      />
-                    )}
-                    <button
-                      className="axis-today-button"
-                      type="button"
-                      onClick={handleDaysClick}
-                      title="单击恢复3天视图 · 双击自定义天数"
-                    >
-                      {Math.round(visibleDays * 10) / 10}天
-                    </button>
-                    {showDaysInput && (
-                      <input
-                        type="number"
-                        className="today-date-picker-inline"
-                        style={{ width: 60 }}
-                        value={customDays}
-                        min={0.04}
-                        max={33}
-                        step={0.5}
-                        onChange={(e) => setCustomDays(e.target.value)}
-                        onKeyDown={(e) => { if (e.key === "Enter") handleCustomDaysSubmit(); }}
-                        onBlur={handleCustomDaysSubmit}
-                        autoFocus
-                      />
-                    )}
                   </div>
                 </div>
-                <DayTimeline events={events} todos={timelineTodos} linkedTodoTitles={linkedTodoTitles} onEventClick={setEditingEvent} onTodoClick={setEditingTodo} scale={timelineScale} onScaleChange={setTimelineScale} scrollToTodayTrigger={scrollToTodayTrigger} scrollToDate={scrollToDate} />
+                <DayTimeline events={events} todos={todos} onEventClick={setEditingEvent} onTodoClick={setEditingTodo} />
               </article>
             </section>
 
@@ -458,7 +346,7 @@ export default function HomePage() {
                         "显示今日需要跟进的待办任务，按优先级排列。",
                         "使用顶部\"📝 快速记录工作\"按钮记录工作。",
                         "使用顶部\"+ 添加任务\"按钮创建待办。",
-                        "点击时间轴上的卡片可直接编辑或删除。",
+                        "点击时间轴上的待办先查看详情，再按需编辑或删除。",
                       ]} />
                     </div>
                   </div>
@@ -506,7 +394,7 @@ export default function HomePage() {
                         "以时间线形式展示今日新增的工作记录。",
                         "使用顶部\"📝 快速记录工作\"按钮添加记录。",
                         "每条记录包含标题、详情、标签和关联待办。",
-                        "点击时间轴上的记录卡片可编辑或删除。",
+                        "点击时间轴上的工作块先查看详情，再按需编辑或删除。",
                       ]} />
                     </div>
                   </div>

@@ -1,303 +1,151 @@
-import { EventItem, Priority, TodoItem } from "@/types";
+import type { EventItem, Priority, TodoItem } from "@/types";
 
 export type AdaptiveTimelineView = "day" | "three" | "week" | "month";
+export const ADAPTIVE_VIEW_DAYS: Record<AdaptiveTimelineView, number> = { day: 1, three: 3, week: 7, month: 30 };
+export const ADAPTIVE_VIEW_ORDER: AdaptiveTimelineView[] = ["day", "three", "week", "month"];
+export const PRIORITY_COLORS: Record<Priority, string> = { high: "#ef5350", medium: "#ed9b21", low: "#3186e8" };
+export const PRIORITY_LABEL = { high: "高", medium: "中", low: "低" };
+export const STATUS_LABEL = { pending: "未开始", in_progress: "进行中", completed: "已完成", cancelled: "已取消" };
 
-export const ADAPTIVE_VIEW_DAYS: Record<AdaptiveTimelineView, number> = {
-  day: 1,
-  three: 3,
-  week: 7,
-  month: 30,
-};
-
-export const ADAPTIVE_VIEW_ORDER: AdaptiveTimelineView[] = [
-  "day",
-  "three",
-  "week",
-  "month",
-];
-
-export type TimelineWindow = {
-  view: AdaptiveTimelineView;
-  start: Date;
-  end: Date;
-  startMs: number;
-  endMs: number;
-  dayCount: number;
-};
-
-export function adaptiveViewForDays(visibleDays: number): AdaptiveTimelineView {
-  if (visibleDays <= 1.75) return "day";
-  if (visibleDays <= 4.5) return "three";
-  if (visibleDays <= 10) return "week";
+export function adaptiveViewForDays(days: number): AdaptiveTimelineView {
+  if (!Number.isFinite(days) || days <= 1.75) return "day";
+  if (days <= 4.5) return "three";
+  if (days <= 10) return "week";
   return "month";
 }
-export function adaptiveViewScale(view: AdaptiveTimelineView): number {
-  return 1 / ADAPTIVE_VIEW_DAYS[view];
-}
-
-export function adjacentAdaptiveView(
-  view: AdaptiveTimelineView,
-  direction: "in" | "out",
-): AdaptiveTimelineView {
-  const index = ADAPTIVE_VIEW_ORDER.indexOf(view);
-  const nextIndex = direction === "in"
-    ? Math.max(0, index - 1)
-    : Math.min(ADAPTIVE_VIEW_ORDER.length - 1, index + 1);
-  return ADAPTIVE_VIEW_ORDER[nextIndex];
-}
-
 export function startOfLocalDay(value: string | Date): Date {
-  const date = new Date(value);
+  const date = typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)
+    ? new Date(value + "T00:00:00") : new Date(value);
   date.setHours(0, 0, 0, 0);
   return date;
 }
-
 export function localDateKey(value: string | Date): string {
-  const date = new Date(value);
-  const pad2 = (part: number) => String(part).padStart(2, "0");
-  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
+  const date = startOfLocalDay(value);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return date.getFullYear() + "-" + pad(date.getMonth() + 1) + "-" + pad(date.getDate());
 }
-export function buildTimelineWindow(
-  focusDate: string | Date,
-  view: AdaptiveTimelineView,
-): TimelineWindow {
-  const start = startOfLocalDay(focusDate);
-  const dayCount = ADAPTIVE_VIEW_DAYS[view];
-  const end = new Date(start);
-  end.setDate(end.getDate() + dayCount);
-  return {
-    view,
-    start,
-    end,
-    startMs: start.getTime(),
-    endMs: end.getTime(),
-    dayCount,
-  };
-}
-
-export function shiftFocusDate(
-  focusDate: string | Date,
-  view: AdaptiveTimelineView,
-  direction: -1 | 1,
-): string {
-  const date = startOfLocalDay(focusDate);
-  date.setDate(date.getDate() + ADAPTIVE_VIEW_DAYS[view] * direction);
+export function shiftDate(value: string | Date, days: number): string {
+  const date = startOfLocalDay(value);
+  date.setDate(date.getDate() + days);
   return localDateKey(date);
 }
-
-export function eventOverlapsWindow(event: EventItem, window: TimelineWindow): boolean {
-  const start = new Date(event.startTime).getTime();
-  const end = Math.max(start + 60_000, new Date(event.endTime).getTime());
-  return start < window.endMs && end > window.startMs;
+export function buildTimelineWindow(value: string | Date, view: AdaptiveTimelineView) {
+  const start = startOfLocalDay(value);
+  const end = startOfLocalDay(shiftDate(value, ADAPTIVE_VIEW_DAYS[view]));
+  return { start, end, startMs: +start, endMs: +end, dayCount: ADAPTIVE_VIEW_DAYS[view] };
 }
-export function todoAnchorMs(todo: TodoItem, fallbackDayMs?: number): number {
-  const source = todo.startTime || todo.dueDate;
-  if (source) {
-    const parsed = new Date(source).getTime();
+export function formatClock(value: string | number): string {
+  const date = new Date(value);
+  return Number.isFinite(+date) ? date.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false }) : "未设时间";
+}
+export function dateLabel(value: string | Date): string {
+  return startOfLocalDay(value).toLocaleDateString("zh-CN", { month: "numeric", day: "numeric", weekday: "short" });
+}
+export function eventColor(id: string): string {
+  const colors = ["#cce4fc", "#c7eddf", "#e0d6fa", "#ffe6bf"];
+  let hash = 0;
+  for (const char of id) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
+  return colors[hash % colors.length];
+}
+/** 没有真实时间时不生成锚点；不依赖当前时间或浏览器。 */
+export function todoAnchorMs(todo: TodoItem): number | null {
+  for (const value of [todo.startTime, todo.dueDate]) {
+    if (!value) continue;
+    const parsed = +new Date(value);
     if (Number.isFinite(parsed)) return parsed;
   }
-  if (fallbackDayMs !== undefined) return fallbackDayMs + 12 * 60 * 60 * 1000;
-  const today = startOfLocalDay(new Date());
-  return today.getTime() + 12 * 60 * 60 * 1000;
+  return null;
 }
-
-export function todosInWindow(todos: TodoItem[], window: TimelineWindow): TodoItem[] {
-  return todos.filter((todo) => {
-    if (todo.status === "cancelled") return false;
-    const anchor = todoAnchorMs(todo, window.startMs);
-    return anchor >= window.startMs && anchor < window.endMs;
-  });
+export function eventInterval(event: EventItem): { start: number; end: number } | null {
+  const start = +new Date(event.startTime);
+  const end = +new Date(event.endTime);
+  return Number.isFinite(start) && Number.isFinite(end) && end > start ? { start, end } : null;
 }
-
-export function eventsInWindow(events: EventItem[], window: TimelineWindow): EventItem[] {
-  return events.filter((event) => eventOverlapsWindow(event, window));
-}
-
 export type DetailedTodoMarker =
   | { kind: "item"; id: string; anchorMs: number; lane: number; todo: TodoItem }
-  | { kind: "cluster"; id: string; anchorMs: number; todos: TodoItem[] };
-export type DetailedEventBand = {
-  event: EventItem;
-  lane: number;
-  leftPercent: number;
-  widthPercent: number;
-};
-
-export type OverflowEventGroup = {
-  id: string;
-  anchorMs: number;
-  events: EventItem[];
-};
-
-export type DetailedEventLayout = {
-  visible: DetailedEventBand[];
-  overflow: OverflowEventGroup[];
-};
-
-export type DayTimelineSummary = {
-  dateKey: string;
-  date: Date;
-  todos: TodoItem[];
-  events: EventItem[];
-  priorityCounts: Record<Priority, number>;
-  eventHours: number;
-};
-
-const DAY_MS = 86_400_000;
-export function buildDetailedTodoMarkers(
-  todos: TodoItem[],
-  clusterMinutes = 40,
-  clusterAt = 3,
-): DetailedTodoMarker[] {
-  const threshold = clusterMinutes * 60_000;
-  const ordered = todos
-    .filter((todo) => todo.status !== "cancelled")
-    .map((todo) => ({ todo, anchorMs: todoAnchorMs(todo) }))
-    .sort((a, b) => a.anchorMs - b.anchorMs);
-
-  const groups: Array<Array<{ todo: TodoItem; anchorMs: number }>> = [];
+  | { kind: "cluster"; id: string; anchorMs: number; lane: number; todos: TodoItem[] };
+/** proximityMinutes 由画布宽度与标签占位宽度换算，碰撞只影响层级，不移动时间锚点。 */
+export function buildDetailedTodoMarkers(todos: TodoItem[], proximityMinutes = 40, clusterAt = 4, rangeEndMs = Infinity): DetailedTodoMarker[] {
+  const ordered = todos.filter(t => t.status !== "cancelled")
+    .map(todo => ({ todo, anchorMs: todoAnchorMs(todo) }))
+    .filter((entry): entry is { todo: TodoItem; anchorMs: number } => entry.anchorMs !== null)
+    .sort((a, b) => a.anchorMs - b.anchorMs || a.todo.id.localeCompare(b.todo.id));
+  const groups: typeof ordered[] = [];
+  let occupiedEnd = -Infinity;
+  const span = Math.max(1, proximityMinutes) * 60_000;
   for (const entry of ordered) {
     const current = groups[groups.length - 1];
-    if (!current || entry.anchorMs - current[current.length - 1].anchorMs > threshold) {
-      groups.push([entry]);
-    } else {
-      current.push(entry);
-    }
+    const labelStart = Math.min(entry.anchorMs, rangeEndMs - span);
+    if (!current || labelStart >= occupiedEnd) groups.push([entry]);
+    else current.push(entry);
+    occupiedEnd = Math.max(occupiedEnd, labelStart + span);
   }
-
   return groups.flatMap((group): DetailedTodoMarker[] => {
-    if (group.length >= clusterAt) {
-      return [{
-        kind: "cluster" as const,
-        id: `todo-cluster-${group[0].anchorMs}`,
-        anchorMs: Math.round(group.reduce((sum, item) => sum + item.anchorMs, 0) / group.length),
-        todos: group.map((item) => item.todo),
-      }];
+    if (group.length >= Math.min(4, Math.max(2, clusterAt))) {
+      return [{ kind: "cluster", id: "todos-" + group[0].todo.id, anchorMs: group[0].anchorMs, lane: 0, todos: group.map(e => e.todo) }];
     }
-    return group.map((item, index) => ({
-      kind: "item" as const,
-      id: item.todo.id,
-      anchorMs: item.anchorMs,
-      lane: index,
-      todo: item.todo,
-    }));
+    return group.map((entry, lane) => ({ kind: "item", id: entry.todo.id, ...entry, lane }));
   });
 }
-
-export function layoutDetailedEvents(
-  events: EventItem[],
-  rangeStartMs: number,
-  rangeEndMs: number,
-  maxLanes = 3,
-): DetailedEventLayout {
-  const total = Math.max(1, rangeEndMs - rangeStartMs);
-  const laneEnds = Array.from({ length: maxLanes }, () => Number.NEGATIVE_INFINITY);
+export type DetailedEventBand = { event: EventItem; lane: number; leftPercent: number; widthPercent: number };
+export type OverflowEventGroup = { id: string; anchorMs: number; events: EventItem[] };
+export function layoutDetailedEvents(events: EventItem[], rangeStartMs: number, rangeEndMs: number, maxLanes = 3) {
   const visible: DetailedEventBand[] = [];
-  const hidden: EventItem[] = [];
-  const ordered = [...events].sort(
-    (a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime(),
-  );
-
-  for (const event of ordered) {
-    const rawStart = new Date(event.startTime).getTime();
-    const rawEnd = Math.max(rawStart + 60_000, new Date(event.endTime).getTime());
-    if (rawStart >= rangeEndMs || rawEnd <= rangeStartMs) continue;
-    const startMs = Math.max(rawStart, rangeStartMs);
-    const endMs = Math.min(rawEnd, rangeEndMs);
-    const lane = laneEnds.findIndex((laneEnd) => rawStart >= laneEnd);
-    if (lane === -1) {
-      hidden.push(event);
-      continue;
-    }
-    laneEnds[lane] = rawEnd;
-    visible.push({
-      event,
-      lane,
-      leftPercent: ((startMs - rangeStartMs) / total) * 100,
-      widthPercent: Math.max(0.4, ((endMs - startMs) / total) * 100),
-    });
-  }
-
   const overflow: OverflowEventGroup[] = [];
-  for (const event of hidden) {
-    const startMs = new Date(event.startTime).getTime();
-    const endMs = Math.max(startMs + 60_000, new Date(event.endTime).getTime());
-    let group = overflow.find((candidate) =>
-      candidate.events.some((existing) => {
-        const existingStart = new Date(existing.startTime).getTime();
-        const existingEnd = Math.max(existingStart + 60_000, new Date(existing.endTime).getTime());
-        return startMs < existingEnd && endMs > existingStart;
-      }),
-    );
-    if (!group) {
-      group = {
-        id: `event-overflow-${startMs}`,
-        anchorMs: startMs,
-        events: [],
-      };
-      overflow.push(group);
+  if (!(rangeEndMs > rangeStartMs)) return { visible, overflow };
+  const ends = Array.from({ length: Math.min(3, Math.max(1, maxLanes)) }, () => -Infinity);
+  const ordered = events.map(event => ({ event, interval: eventInterval(event) }))
+    .filter((e): e is { event: EventItem; interval: { start: number; end: number } } => e.interval !== null)
+    .sort((a, b) => a.interval.start - b.interval.start || a.event.id.localeCompare(b.event.id));
+  for (const { event, interval } of ordered) {
+    const start = Math.max(rangeStartMs, interval.start);
+    const end = Math.min(rangeEndMs, interval.end);
+    if (end <= start) continue;
+    const lane = ends.findIndex(value => value <= start);
+    if (lane < 0) {
+      // 一天只有一个溢出入口，避免溢出标签之间再次碰撞。
+      if (!overflow.length) overflow.push({ id: "overflow-" + rangeStartMs, anchorMs: start, events: [] });
+      overflow[0].events.push(event);
+    } else {
+      ends[lane] = end;
+      visible.push({ event, lane, leftPercent: (start - rangeStartMs) / (rangeEndMs - rangeStartMs) * 100, widthPercent: (end - start) / (rangeEndMs - rangeStartMs) * 100 });
     }
-    group.events.push(event);
   }
-
   return { visible, overflow };
 }
-export function buildDaySummaries(
-  startDayMs: number,
-  dayCount: number,
-  todos: TodoItem[],
-  events: EventItem[],
-): DayTimelineSummary[] {
-  const summaries: DayTimelineSummary[] = [];
-
-  for (let offset = 0; offset < dayCount; offset += 1) {
-    const date = new Date(startDayMs);
-    date.setDate(date.getDate() + offset);
-    date.setHours(0, 0, 0, 0);
-    const startMs = date.getTime();
-    const end = new Date(date);
-    end.setDate(end.getDate() + 1);
-    const endMs = end.getTime();
-
-    const dayTodos = todos.filter((todo) => {
-      if (todo.status === "cancelled") return false;
-      const anchor = todoAnchorMs(todo, startMs);
-      return anchor >= startMs && anchor < endMs;
+export type DayTimelineSummary = {
+  dateKey: string; date: Date; todos: TodoItem[]; events: EventItem[];
+  priorityCounts: Record<Priority, number>; eventHours: number;
+};
+export function buildDaySummaries(startDayMs: number, dayCount: number, todos: TodoItem[], events: EventItem[]): DayTimelineSummary[] {
+  return Array.from({ length: Math.max(0, dayCount) }, (_, offset) => {
+    const date = startOfLocalDay(shiftDate(new Date(startDayMs), offset));
+    const end = +startOfLocalDay(shiftDate(date, 1));
+    const dayTodos = todos.filter(t => {
+      const anchor = todoAnchorMs(t);
+      return t.status !== "cancelled" && anchor !== null && anchor >= +date && anchor < end;
     });
-    const dayEvents = events.filter((event) => {
-      const eventStart = new Date(event.startTime).getTime();
-      const eventEnd = Math.max(eventStart + 60_000, new Date(event.endTime).getTime());
-      return eventStart < endMs && eventEnd > startMs;
+    const dayEvents = events.filter(event => {
+      const interval = eventInterval(event);
+      return interval !== null && interval.start < end && interval.end > +date;
     });
-
-    summaries.push({
-      dateKey: localDateKey(date),
-      date,
-      todos: dayTodos,
-      events: dayEvents,
+    return {
+      dateKey: localDateKey(date), date, todos: dayTodos, events: dayEvents,
       priorityCounts: {
-        high: dayTodos.filter((todo) => todo.priority === "high").length,
-        medium: dayTodos.filter((todo) => todo.priority === "medium").length,
-        low: dayTodos.filter((todo) => todo.priority === "low").length,
+        high: dayTodos.filter(t => t.priority === "high").length,
+        medium: dayTodos.filter(t => t.priority === "medium").length,
+        low: dayTodos.filter(t => t.priority === "low").length,
       },
+      // 记录工时相加；跨日记录按实际落在当天的时长分摊，不是去重占用时长。
       eventHours: dayEvents.reduce((sum, event) => {
-        const eventStart = Math.max(startMs, new Date(event.startTime).getTime());
-        const eventEnd = Math.min(endMs, new Date(event.endTime).getTime());
-        return sum + Math.max(0, eventEnd - eventStart) / 3_600_000;
+        const interval = eventInterval(event)!;
+        return sum + (Math.min(end, interval.end) - Math.max(+date, interval.start)) / 3_600_000;
       }, 0),
-    });
-  }
-
-  return summaries;
+    };
+  });
 }
-
+/** 相对当前窗口最大值的六级密度：0为空，1—5为非零强度。 */
 export function densityLevel(value: number, max: number): number {
-  if (value <= 0 || max <= 0) return 0;
-  return Math.max(1, Math.min(5, Math.ceil((value / max) * 5)));
-}
-
-export function timeOfDayPercent(value: string | Date): number {
-  const date = new Date(value);
-  const minutes = date.getHours() * 60 + date.getMinutes() + date.getSeconds() / 60;
-  return (minutes / (24 * 60)) * 100;
+  if (!Number.isFinite(value) || !Number.isFinite(max) || value <= 0 || max <= 0) return 0;
+  return Math.min(5, Math.max(1, Math.ceil(value / max * 5)));
 }
