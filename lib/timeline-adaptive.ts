@@ -3,7 +3,7 @@ import type { EventItem, Priority, TodoItem } from "@/types";
 export type AdaptiveTimelineView = "day" | "three" | "week" | "month";
 export const ADAPTIVE_VIEW_DAYS: Record<AdaptiveTimelineView, number> = { day: 1, three: 3, week: 7, month: 30 };
 export const ADAPTIVE_VIEW_ORDER: AdaptiveTimelineView[] = ["day", "three", "week", "month"];
-export const PRIORITY_COLORS: Record<Priority, string> = { high: "#ef5350", medium: "#ed9b21", low: "#3186e8" };
+export const PRIORITY_COLORS: Record<Priority, string> = { high: "var(--danger)", medium: "#b88a44", low: "var(--accent)" };
 export const PRIORITY_LABEL = { high: "高", medium: "中", low: "低" };
 export const STATUS_LABEL = { pending: "未开始", in_progress: "进行中", completed: "已完成", cancelled: "已取消" };
 
@@ -42,7 +42,7 @@ export function dateLabel(value: string | Date): string {
   return startOfLocalDay(value).toLocaleDateString("zh-CN", { month: "numeric", day: "numeric", weekday: "short" });
 }
 export function eventColor(id: string): string {
-  const colors = ["#cce4fc", "#c7eddf", "#e0d6fa", "#ffe6bf"];
+  const colors = ["var(--bg-soft)", "#cee4d4", "#e0e9d6", "#e9e3ce"];
   let hash = 0;
   for (const char of id) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
   return colors[hash % colors.length];
@@ -67,6 +67,27 @@ export function eventInterval(event: EventItem): { start: number; end: number } 
   const start = +new Date(event.startTime);
   const end = +new Date(event.endTime);
   return Number.isFinite(start) && Number.isFinite(end) && end > start ? { start, end } : null;
+}
+/** 默认 12 小时窗口：最大化实际工作覆盖，重叠不重复计权；同分时靠近 08:00。 */
+export function workWindowStartHour(date: string | Date, events: EventItem[]): number {
+  const start = +startOfLocalDay(date);
+  const end = +startOfLocalDay(shiftDate(date, 1));
+  const intervals = events.map(eventInterval).filter((v): v is { start: number; end: number } => v !== null)
+    .map(v => ({ start: Math.max(0, (v.start - start) / 3_600_000), end: Math.min(24, (Math.min(v.end, end) - start) / 3_600_000) }))
+    .filter(v => v.end > v.start).sort((a, b) => a.start - b.start);
+  const merged: { start: number; end: number }[] = [];
+  for (const interval of intervals) {
+    const last = merged[merged.length - 1];
+    if (last && last.end >= interval.start) last.end = Math.max(last.end, interval.end);
+    else merged.push({ ...interval });
+  }
+  const candidates = [8, ...merged.flatMap(v => [v.start, v.end - 12])].map(v => Math.max(0, Math.min(12, v)));
+  let best = 8, score = -1;
+  for (const candidate of candidates) {
+    const coverage = merged.reduce((sum, v) => sum + Math.max(0, Math.min(v.end, candidate + 12) - Math.max(v.start, candidate)), 0);
+    if (coverage > score || (coverage === score && Math.abs(candidate - 8) < Math.abs(best - 8))) { best = candidate; score = coverage; }
+  }
+  return best;
 }
 export type DetailedTodoMarker =
   | { kind: "item"; id: string; anchorMs: number; lane: number; todo: TodoItem }

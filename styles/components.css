@@ -547,6 +547,27 @@
   gap: 24px;
 }
 
+/* 日期标题与导航分行，避免输入框挤压标题；仅作用于日历主面板。 */
+.calendar-main { min-width: 0; align-self: start; }
+.calendar-day-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
+.calendar-date-heading { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; min-width: 0; }
+.calendar-date-heading h2 { margin: 0; font-size: clamp(20px, 2vw, 26px); line-height: 1.4; white-space: nowrap; }
+.calendar-date-heading p { flex-basis: 100%; margin: 0; font-size: 13px; color: var(--muted); }
+.calendar-main .calendar-undo { flex: 0 0 auto; white-space: nowrap; padding: 8px 12px; font-size: 13px; }
+.calendar-day-toolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px 16px; padding: 18px 0; margin-bottom: 20px; border-bottom: 1px solid var(--line); }
+.calendar-day-nav { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.calendar-nav-button { display: inline-flex; align-items: center; justify-content: center; height: 36px; min-width: 36px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; background: #fff; color: var(--text); font-size: 20px; line-height: 1; }
+.calendar-nav-button.calendar-today { font-size: 13px; padding: 0 14px; }
+.calendar-nav-button:hover { background: #edf5ef; border-color: var(--accent); }
+.calendar-nav-button:focus-visible, .calendar-date-jump input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.calendar-date-jump { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; max-width: 100%; color: var(--muted); font-size: 13px; }
+.calendar-main .calendar-date-picker { width: 154px; max-width: 100%; min-width: 0; height: 36px; padding: 5px 8px; border: 1px solid var(--line); border-radius: 8px; background: #fff; color: var(--text); font: inherit; box-sizing: border-box; }
+.calendar-main .calendar-column { min-width: 0; align-content: start; gap: 12px; }
+.calendar-column-title { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 15px; font-weight: 600; }
+.calendar-column-title span { display: inline-flex; justify-content: center; align-items: center; min-width: 22px; height: 22px; padding: 0 5px; border-radius: 6px; background: #edf3ee; color: var(--muted); font-size: 12px; font-weight: 400; }
+.calendar-empty { display: grid; place-items: center; min-height: 96px; margin: 0; padding: 16px; border: 1px dashed var(--line); border-radius: 10px; background: rgba(255, 255, 255, .5); color: var(--muted); font-size: 13px; }
+.calendar-main .calendar-card { overflow-wrap: anywhere; border-radius: 10px; }
+
 .calendar-columns {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

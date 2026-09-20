@@ -14,15 +14,17 @@ export function AdaptiveDayView({ date, events, todos, now, compact = false, wid
   const start = +startOfLocalDay(date);
   const end = +startOfLocalDay(shiftDate(date, 1));
   const duration = end - start;
+  const labelWidth = Math.min(164, Math.max(88, width / 8));
   const day = useMemo(() => buildDaySummaries(start, 1, todos, events)[0], [start, todos, events]);
   const markers = useMemo(() => buildDetailedTodoMarkers(day.todos,
-    (compact ? 56 : 180) / width * duration / 60_000, compact ? 2 : 4, end), [day.todos, compact, width, duration, end]);
+    (compact ? 56 : labelWidth + 16) / width * duration / 60_000, compact ? 2 : 4, end), [day.todos, compact, width, duration, end, labelWidth]);
   const layout = useMemo(() => layoutDetailedEvents(day.events, start, end), [day.events, start, end]);
   const hasOverdue = markers.some(m => m.kind === "item" && isTodoOverdue(m.todo, now));
-  const ticks = Array.from({ length: compact ? 3 : 24 }, (_, i) => compact ? i * 12 : i);
+  const step = compact ? 12 : [1, 2, 3, 4, 6, 12].find(value => width / (24 / value) >= 58) ?? 12;
+  const ticks = Array.from({ length: 24 / step + 1 }, (_, i) => i * step);
   return <section className={"at-day" + (compact ? " at-day-compact" : "")} style={{ width }} aria-label={dateLabel(date)}
     data-todo-lanes={Math.max(1, ...markers.map(m => m.lane + 1))} data-overdue={hasOverdue} data-event-lanes={Math.max(1, ...layout.visible.map(b => b.lane + 1))} data-overflow={layout.overflow.length > 0}>
-    {compact && <div className="at-date-heading">{dateLabel(date)}</div>}
+    <div className="at-date-heading"><span>{dateLabel(date)}</span></div>
     <div className="at-hour-axis">
       {ticks.map(hour => {
         const tick = new Date(start);
@@ -55,7 +57,7 @@ export function AdaptiveDayView({ date, events, todos, now, compact = false, wid
             aria-label={todo.title + "，" + formatClock(marker.anchorMs) + "，" + STATUS_LABEL[todo.status] + (overdue ? "，逾期未完成" : "")}
             title={todo.title} onClick={() => onTodoClick(todo)}>
             <span className="at-pin">{todo.status === "completed" ? "✓" : ""}</span>
-            {!compact && <span className="at-todo-label" style={{ width: 164, marginLeft: Math.min(0, width * (1 - left / 100) - 180) }}>
+            {!compact && <span className="at-todo-label" style={{ width: labelWidth, marginLeft: Math.min(0, width * (1 - left / 100) - labelWidth - 16) }}>
               <small>{formatClock(marker.anchorMs)}</small><strong>{todo.title}</strong>
               {overdue && <span className="at-overdue">逾期未完成</span>}
             </span>}

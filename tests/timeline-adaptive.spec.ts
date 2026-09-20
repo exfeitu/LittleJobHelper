@@ -30,6 +30,72 @@ async function loadFixture(page: Page, data = { events, todos }) {
 
 test.use({ viewport: { width: 1600, height: 1000 } });
 
+test("打开时按早班晚班自动定位，空日使用默认工作时段", async ({ page }) => {
+  for (const [from, to, hour] of [["05:30", "14:00", 5.5], ["16:00", "23:00", 11], ["", "", 8]] as const) {
+    await loadFixture(page, { todos: [], events: from ? [{ ...events[0], startTime: stamp(from), endTime: stamp(to) }] : [] });
+    const scroll = page.locator(".at-scroll");
+    await expect.poll(() => scroll.evaluate(n => (n.scrollLeft / (n.clientWidth * 2) - 2) * 24)).toBeCloseTo(hour, 1);
+    if (from) {
+      const bounds = (await scroll.boundingBox())!;
+      const record = (await page.locator('[data-current="true"] .at-event').boundingBox())!;
+      expect(record.x).toBeGreaterThanOrEqual(bounds.x - 1);
+      expect(record.x + record.width).toBeLessThanOrEqual(bounds.x + bounds.width + 1);
+    }
+  }
+});
+
+test("12 小时工作窗口与跨午夜连续平移", async ({ page }, info) => {
+  await loadFixture(page, { todos: [task("早", "09:15"), task("晚", "17:30")], events: [
+    { ...events[0], startTime: stamp("09:00"), endTime: stamp("12:00") },
+    { ...events[1], startTime: stamp("14:00"), endTime: stamp("19:00") },
+  ] });
+  const root = page.locator(".at-root");
+  const scroll = root.locator(".at-scroll");
+  const current = root.locator('[data-current="true"]');
+  const bounds = (await scroll.boundingBox())!;
+  expect((await current.boundingBox())!.x).toBeCloseTo(bounds.x - bounds.width * 8 / 12, 0);
+  expect((await current.boundingBox())!.width).toBeCloseTo(bounds.width * 2, 0);
+  expect(await root.getByRole("button", { name: "1天", exact: true }).evaluate(n => getComputedStyle(n).backgroundColor)).toBe("rgb(79, 143, 99)");
+  for (const name of [/任务早.*09:15/, /任务晚.*17:30/]) {
+    const box = (await current.getByRole("button", { name }).boundingBox())!;
+    expect(box.x).toBeGreaterThanOrEqual(bounds.x);
+    expect(box.x + box.width).toBeLessThanOrEqual(bounds.x + bounds.width + 1);
+  }
+  await root.screenshot({ path: info.outputPath("full-day.png") });
+  const next = root.locator('[data-date="2026-09-15"]');
+  await scroll.evaluate(n => { n.scrollLeft += n.clientWidth * 1.5; });
+  const before = (await next.boundingBox())!.x;
+  await expect(root.getByLabel("跳转日期")).toHaveValue("2026-09-15");
+  expect((await next.boundingBox())!.x).toBeCloseTo(before, 0);
+  await root.screenshot({ path: info.outputPath("midnight-continuous.png") });
+  await root.getByRole("button", { name: "后一时间段" }).click();
+  await expect(root.getByLabel("跳转日期")).toHaveValue("2026-09-16");
+  expect((await root.locator('[data-current="true"]').boundingBox())!.x).toBeCloseTo(before, 0);
+  await root.getByLabel("跳转日期").fill("2026-09-30");
+  const motion = await root.evaluate(async node => {
+    const day = node.querySelector('[data-date="2026-10-01"]')!;
+    const samples: number[] = [];
+    (node.querySelector('[aria-label="后一时间段"]') as HTMLButtonElement).click();
+    for (let i = 0; i < 70; i++) {
+      await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+      samples.push(day.getBoundingClientRect().x);
+    }
+    return { samples, retained: day.isConnected };
+  });
+  expect(motion.retained).toBe(true);
+  expect(new Set(motion.samples.map(Math.round)).size).toBeGreaterThan(5);
+  for (let i = 1; i < motion.samples.length; i++) {
+    expect(motion.samples[i] - motion.samples[i - 1]).toBeLessThanOrEqual(1);
+  }
+  await expect(root.getByLabel("跳转日期")).toHaveValue("2026-10-01");
+  await root.getByRole("button", { name: "后一时间段" }).evaluate(node => {
+    for (let i = 0; i < 5; i++) (node as HTMLButtonElement).click();
+  });
+  await expect(root.getByLabel("跳转日期")).toHaveValue("2026-10-06");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect.poll(() => current.evaluate(n => Math.abs(n.getBoundingClientRect().width - n.closest('.at-scroll')!.clientWidth * 2))).toBeLessThan(1);
+});
+
 test("approved-visual-tasks-across-time", async ({ page }, info) => {
   await page.clock.setFixedTime(new Date(`${date}T14:00:00`));
   const visualTodos: TodoItem[] = [
@@ -48,7 +114,7 @@ test("approved-visual-tasks-across-time", async ({ page }, info) => {
   await expect(root.locator(".at-todo")).toHaveCount(4);
   await expect(root.locator(".at-cluster")).toHaveCount(0);
   await expect(root.locator(".at-overdue")).toHaveText("逾期未完成");
-  await expect(root.locator(".at-day")).toHaveAttribute("data-todo-lanes", "1");
+  await expect(root.locator('[data-current="true"] .at-day')).toHaveAttribute("data-todo-lanes", "1");
   const overdue = root.getByRole("button", { name: /提交周报，09:30.*逾期未完成/ });
   const noon = root.locator(".at-now");
   expect((await overdue.boundingBox())!.x).toBeLessThan((await noon.boundingBox())!.x);
@@ -70,7 +136,7 @@ test("approved-visual-tasks-across-time", async ({ page }, info) => {
   await root.getByRole("button", { name: "今天", exact: true }).click();
   await expect(root.getByLabel("跳转日期")).toHaveValue(date);
   const box = (await root.locator(".at-scroll").boundingBox())!;
-  await expect.poll(async () => Math.abs((await noon.boundingBox())!.x - (box.x + box.width / 2))).toBeLessThan(3);
+  await expect.poll(async () => Math.abs((await noon.boundingBox())!.x - (box.x + box.width * (14 - 8) / 12))).toBeLessThan(3);
 });
 
 test("day-baseline-step1", async ({ page }, info) => {
@@ -83,19 +149,19 @@ test("day-baseline-step1", async ({ page }, info) => {
   expect(fullWidth).toBeGreaterThan(1300);
   await expect(root.locator(".at-now")).toContainText("12:27");
   const nowLabel = (await root.locator(".at-now > span").boundingBox())!;
-  const noonTick = (await root.locator(".at-hour-axis").getByText("12:00", { exact: true }).boundingBox())!;
+  const noonTick = (await root.locator('[data-current="true"] .at-hour-axis').getByText("12:00", { exact: true }).boundingBox())!;
   expect(nowLabel.y + nowLabel.height).toBeLessThan(noonTick.y);
   expect(await root.locator(".at-todo-label strong").first().evaluate(n => getComputedStyle(n).fontSize)).toBe("14px");
   await root.screenshot({ path: info.outputPath("day-full-width.png") });
   await scroll.evaluate(n => { n.scrollLeft += 50; });
-  const left = await scroll.evaluate(n => n.scrollLeft);
-  await root.getByRole("button", { name: /任务A.*08:00/ }).click();
+  const left = await scroll.evaluate(n => n.scrollLeft / n.clientWidth);
+  await root.getByRole("button", { name: /任务C.*12:00/ }).click();
   await expect.poll(() => scroll.evaluate(n => n.clientWidth)).toBeLessThan(fullWidth);
-  expect(await scroll.evaluate(n => n.scrollLeft)).toBe(left);
+  expect(await scroll.evaluate(n => n.scrollLeft / n.clientWidth)).toBeCloseTo(left, 2);
   await root.screenshot({ path: info.outputPath("day-detail.png") });
   await root.getByRole("button", { name: "关闭详情", exact: true }).click();
   await expect.poll(() => scroll.evaluate(n => n.clientWidth)).toBe(fullWidth);
-  expect(await scroll.evaluate(n => n.scrollLeft)).toBe(left);
+  expect(await scroll.evaluate(n => n.scrollLeft / n.clientWidth)).toBeCloseTo(left, 2);
   const denseHeight = await root.locator(".at-time-area").evaluate(n => n.clientHeight);
   await loadFixture(page, { todos: [todos[0]], events: [events[0]] });
   const sparseHeight = await root.locator(".at-time-area").evaluate(n => n.clientHeight);
@@ -120,7 +186,7 @@ test("详细视图：真实时间、2/3 错层、4 项聚合、记录溢出和�
   }
   await expect(root.locator(".at-event")).toHaveCount(3);
   expect(await root.locator(".at-event").evaluateAll(nodes => nodes.map(n => n.getAttribute("data-lane")))).toEqual(["0", "1", "2"]);
-  const canvasWidth = await root.locator(".at-day").evaluate(node => node.getBoundingClientRect().width);
+  const canvasWidth = await root.locator('[data-current="true"] .at-day').evaluate(node => node.getBoundingClientRect().width);
   expect((await root.locator('[data-event-id="a"]').boundingBox())!.width).toBeCloseTo(canvasWidth * 2 / 24, 0);
   await a.click();
   const details = page.getByRole("complementary", { name: "时间轴详情" });
@@ -187,8 +253,8 @@ test("窄屏不溢出页面，聚合列表可键盘关闭", async ({ page }) => 
   await page.setViewportSize({ width: 390, height: 844 });
   await loadFixture(page);
   const root = page.locator(".at-root");
-  await root.getByRole("button", { name: "4项待办", exact: true }).click();
-  const dialog = page.getByRole("dialog", { name: "4项待办" });
+  await root.locator(".at-cluster").first().click();
+  const dialog = page.locator(".at-popover");
   await expect(dialog).toBeVisible();
   const box = (await dialog.boundingBox())!;
   expect(box.x).toBeGreaterThanOrEqual(0); expect(box.x + box.width).toBeLessThanOrEqual(390);

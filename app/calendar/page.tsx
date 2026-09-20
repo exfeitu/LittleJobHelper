@@ -9,7 +9,7 @@ import { WorkRecordPanel } from "@/components/work-record-panel";
 import { AppHeader } from "@/components/app-header";
 import { BackupReminder } from "@/components/backup-reminder";
 import { syncLinkedItems } from "@/lib/utils";
-import { formatDateTime, formatDiaryDate, getTodayFocus, isTodoActive } from "@/lib/utils";
+import { formatDateTime, getTodayFocus, isTodoActive } from "@/lib/utils";
 import { genId } from "@/lib/utils";
 import { useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts";
 import { EventItem, Priority, TodoItem, TodoStatus } from "@/types";
@@ -206,19 +206,19 @@ export default function CalendarPage() {
 
         <div className="calendar-layout">
           <section className="panel section-card calendar-main">
-            <div className="section-head section-head-tight">
-              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                <h2>{formatDiaryDate(`${selectedDate}T09:00:00`)}</h2>
+            <div className="calendar-day-header">
+              <div className="calendar-date-heading">
+                <h2>{new Date(`${selectedDate}T12:00:00`).toLocaleDateString("zh-CN", { year: "numeric", month: "long", day: "numeric" })}</h2>
                 <HelpIcon tips={[
                   "左侧\"当日日程\"显示选中日期的时间安排。",
                   "右侧\"当日待办\"显示截止日期为当天的任务。",
                   "使用日期选择器或两侧箭头切换日期。",
                   "点击日程 / 待办卡片可直接编辑或删除。",
                 ]} />
+                <p>{new Date(`${selectedDate}T12:00:00`).toLocaleDateString("zh-CN", { weekday: "long" })}{selectedDate === today ? " · 今天" : ""}</p>
               </div>
-              <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
                 <button
-                  className="ghost-button"
+                  className="ghost-button calendar-undo"
                   type="button"
                   onClick={undo}
                   disabled={!canUndo}
@@ -226,16 +226,20 @@ export default function CalendarPage() {
                 >
                   ↩ 撤销
                 </button>
+            </div>
+            <div className="calendar-day-toolbar" aria-label="日历日期导航">
+              <div className="calendar-day-nav" role="group" aria-label="切换日期">
                 <button
-                  className="axis-today-button"
+                  className="calendar-nav-button"
                   type="button"
                   onClick={() => setSelectedDate((d) => shiftDay(d, -1))}
                   title="前一天"
+                  aria-label="前一天"
                 >
-                  ◀
+                  ‹
                 </button>
                 <button
-                  className="axis-today-button"
+                  className="calendar-nav-button calendar-today"
                   type="button"
                   onClick={() => setSelectedDate(today)}
                   title="回到今天"
@@ -243,25 +247,29 @@ export default function CalendarPage() {
                   今天
                 </button>
                 <button
-                  className="axis-today-button"
+                  className="calendar-nav-button"
                   type="button"
                   onClick={() => setSelectedDate((d) => shiftDay(d, 1))}
                   title="后一天"
+                  aria-label="后一天"
                 >
-                  ▶
+                  ›
                 </button>
+              </div>
+              <label className="calendar-date-jump">
+                <span>跳转日期</span>
                 <input
                   className="calendar-date-picker"
                   type="date"
                   value={selectedDate}
-                  onChange={(event) => setSelectedDate(event.target.value)}
+                  onChange={(event) => { if (event.target.value) setSelectedDate(event.target.value); }}
                 />
-              </div>
+              </label>
             </div>
 
             <div className="calendar-columns">
               <div className="calendar-column">
-                <h3>当日日程</h3>
+                <h3 className="calendar-column-title">当日日程<span>{eventsByDate.length}</span></h3>
                 <div className="calendar-list">
                   {eventsByDate.length ? (
                     eventsByDate.map((event) => (
@@ -283,13 +291,13 @@ export default function CalendarPage() {
                       </article>
                     ))
                   ) : (
-                    <p className="empty-note">当天还没有日程。</p>
+                    <p className="calendar-empty">当天还没有日程</p>
                   )}
                 </div>
               </div>
 
               <div className="calendar-column">
-                <h3>当日待办</h3>
+                <h3 className="calendar-column-title">当日待办<span>{todosByDate.length}</span></h3>
                 <div className="calendar-list">
                   {todosByDate.length ? (
                     todosByDate.map((todo) => (
@@ -309,7 +317,7 @@ export default function CalendarPage() {
                       </article>
                     ))
                   ) : (
-                    <p className="empty-note">当天还没有待办。</p>
+                    <p className="calendar-empty">当天还没有待办</p>
                   )}
                 </div>
               </div>

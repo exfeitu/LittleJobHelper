@@ -7,11 +7,12 @@ import { AdaptiveWeekView } from "./adaptive-week-view";
 import { AdaptiveMonthView } from "./adaptive-month-view";
 import { TimelineDetailPanel, type TimelineSelection } from "./timeline-detail-panel";
 import { TimelinePopover } from "./timeline-popover";
+import { DAY_OFFSETS, useContinuousDayScroll } from "@/hooks/use-continuous-day-scroll";
 import { ADAPTIVE_VIEW_DAYS, ADAPTIVE_VIEW_ORDER, adaptiveViewForDays, buildDaySummaries, dateLabel,
-  eventInterval, localDateKey, shiftDate, startOfLocalDay, todoAnchorMs, type AdaptiveTimelineView } from "@/lib/timeline-adaptive";
+  eventInterval, localDateKey, shiftDate, startOfLocalDay, todoAnchorMs, workWindowStartHour, type AdaptiveTimelineView } from "@/lib/timeline-adaptive";
 
 type Props = { events: EventItem[]; todos?: TodoItem[]; onEventClick?: (event: EventItem) => void; onTodoClick?: (todo: TodoItem) => void };
-const viewTitles = { day: "1 天 · 详细时间", three: "3 天 · 时间分布", week: "7 天 · 每日节奏", month: "30 天 · 密度趋势" };
+const viewTitles = { day: "1 天 · 12 小时工作窗口", three: "3 天 · 时间分布", week: "7 天 · 每日节奏", month: "30 天 · 密度趋势" };
 
 export function DayTimeline({ events, todos = [], onEventClick, onTodoClick }: Props) {
   const [view, setView] = useState<AdaptiveTimelineView>("day");
@@ -29,7 +30,10 @@ export function DayTimeline({ events, todos = [], onEventClick, onTodoClick }: P
   const summaries = useMemo(() => buildDaySummaries(+start, dayCount, todos, events), [start, dayCount, todos, events]);
   const unscheduled = useMemo(() => todos.filter(t => t.status !== "cancelled" && todoAnchorMs(t) === null), [todos]);
   const invalidEvents = useMemo(() => events.filter(e => !eventInterval(e)), [events]);
-  const canvasWidth = Math.max(viewportWidth, view === "day" ? 2400 : view === "three" ? 630 : view === "week" ? 630 : 900);
+  const canvasWidth = view === "day" ? Math.max(1, viewportWidth) * 2 : Math.max(viewportWidth, view === "month" ? 900 : 630);
+  const initialHour = useMemo(() => workWindowStartHour(focusDate, events), [focusDate, events]);
+  const continuous = useContinuousDayScroll({ nodeRef: scrollRef, date: focusDate, width: canvasWidth,
+    enabled: view === "day", initialFraction: initialHour / 24, resetKey: `${view}:${todayRequest}`, dragRef: drag, onDateChange: setFocusDate });
   const showDetail = (view === "day" || view === "three") && selection !== null &&
     (selection.kind === "todo" ? todos.some(t => t.id === selection.id) : events.some(e => e.id === selection.id));
   useEffect(() => {
@@ -44,17 +48,6 @@ export function DayTimeline({ events, todos = [], onEventClick, onTodoClick }: P
     observer.observe(node);
     return () => observer.disconnect();
   }, []);
-  useLayoutEffect(() => {
-    const node = scrollRef.current;
-    if (!node) return;
-    const current = new Date();
-    const centerNow = todayRequest > 0 && focusDate === localDateKey(current);
-    const startMs = +startOfLocalDay(focusDate);
-    const duration = +startOfLocalDay(shiftDate(focusDate, 1)) - startMs;
-    node.scrollLeft = view !== "day" ? 0 : centerNow
-      ? Math.max(0, canvasWidth * (+current - startMs) / duration - node.clientWidth / 2)
-      : Math.min(canvasWidth * 7 / 24, canvasWidth - node.clientWidth);
-  }, [view, focusDate, canvasWidth, todayRequest]);
   useEffect(() => {
     const node = scrollRef.current;
     if (!node) return;
@@ -70,7 +63,11 @@ export function DayTimeline({ events, todos = [], onEventClick, onTodoClick }: P
     return () => node.removeEventListener("wheel", onWheel);
   }, []);
   const chooseView = (next: AdaptiveTimelineView) => { zoomDays.current = ADAPTIVE_VIEW_DAYS[next]; setView(next); };
-  const openDay = (key: string) => { setFocusDate(key); chooseView("day"); };
+  const openDay = (key: string) => { setFocusDate(key); setTodayRequest(value => value + 1); chooseView("day"); };
+  const navigate = (delta: number) => {
+    if (view === "day") continuous.moveDays(delta);
+    else setFocusDate(shiftDate(focusDate, delta * dayCount));
+  };
   const onTodo = (todo: TodoItem) => setSelection({ kind: "todo", id: todo.id });
   const onEvent = (event: EventItem) => setSelection({ kind: "event", id: event.id });
   const detailedProps = { date: start, events, todos, now, width: canvasWidth, onEventClick: onEvent, onTodoClick: onTodo };
@@ -79,10 +76,10 @@ export function DayTimeline({ events, todos = [], onEventClick, onTodoClick }: P
       <div className="at-view-switch" role="group" aria-label="时间轴展示模式">{ADAPTIVE_VIEW_ORDER.map(mode =>
         <button key={mode} type="button" aria-pressed={view === mode} onClick={() => chooseView(mode)}>{ADAPTIVE_VIEW_DAYS[mode]}天</button>)}</div>
       <div className="at-navigation">
-        <button type="button" aria-label="前一时间段" onClick={() => setFocusDate(shiftDate(focusDate, -dayCount))}>‹</button>
+        <button type="button" aria-label="前一时间段" onClick={() => navigate(-1)}>‹</button>
         <label className="at-date-input"><span className="sr-only">跳转日期</span><input type="date" aria-label="跳转日期" value={focusDate}
-          onChange={event => { if (event.target.value) setFocusDate(event.target.value); }} /></label>
-        <button type="button" aria-label="后一时间段" onClick={() => setFocusDate(shiftDate(focusDate, dayCount))}>›</button>
+          onChange={event => { if (event.target.value) { setFocusDate(event.target.value); setTodayRequest(value => value + 1); } }} /></label>
+        <button type="button" aria-label="后一时间段" onClick={() => navigate(1)}>›</button>
         <button type="button" onClick={() => { setFocusDate(localDateKey(new Date())); setNow(Date.now()); setTodayRequest(value => value + 1); }}>今天</button>
       </div>
     </div>
@@ -94,6 +91,7 @@ export function DayTimeline({ events, todos = [], onEventClick, onTodoClick }: P
           <div className={"at-scroll" + (dragging ? " is-dragging" : "")} ref={scrollRef} aria-label="可缩放时间轴" tabIndex={0}
             onPointerDown={event => {
               if (event.button !== 0 || (event.target as HTMLElement).closest("button,input")) return;
+              continuous.stop();
               drag.current = { x: event.clientX, left: event.currentTarget.scrollLeft };
               event.currentTarget.setPointerCapture(event.pointerId); setDragging(true);
             }}
@@ -106,14 +104,19 @@ export function DayTimeline({ events, todos = [], onEventClick, onTodoClick }: P
               const desired = origin.left - (event.clientX - origin.x);
               const max = event.currentTarget.scrollWidth - event.currentTarget.clientWidth;
               const excess = desired < 0 ? desired : desired > max ? desired - max : 0;
-              if (Math.abs(excess) > 60) setFocusDate(shiftDate(focusDate, Math.sign(excess) * Math.max(1, Math.round(Math.abs(excess) / (canvasWidth / dayCount)))));
+              if (view !== "day" && Math.abs(excess) > 60) setFocusDate(shiftDate(focusDate, Math.sign(excess) * Math.max(1, Math.round(Math.abs(excess) / (canvasWidth / dayCount)))));
               drag.current = null; setDragging(false);
               event.currentTarget.releasePointerCapture(event.pointerId);
             }}
             onPointerCancel={() => { drag.current = null; setDragging(false); }}
           >
-            <div className="at-canvas" style={{ width: canvasWidth }} key={view + focusDate}>
-              {view === "day" && <AdaptiveDayView {...detailedProps} />}
+            <div className={"at-canvas" + (view === "day" ? " at-continuous-days" : "")} style={{ width: canvasWidth * (view === "day" ? DAY_OFFSETS.length : 1) }}>
+              {view === "day" && DAY_OFFSETS.map(offset => {
+                const key = shiftDate(focusDate, offset);
+                return <div className="at-day-page" data-date={key} data-current={offset === 0} key={key} style={{ width: canvasWidth }}>
+                  <AdaptiveDayView {...detailedProps} date={startOfLocalDay(key)} />
+                </div>;
+              })}
               {view === "three" && <AdaptiveThreeDayView {...detailedProps} />}
               {view === "week" && <AdaptiveWeekView days={summaries} onDayClick={openDay} now={now} />}
               {view === "month" && <AdaptiveMonthView days={summaries} onDayClick={openDay} now={now} />}
