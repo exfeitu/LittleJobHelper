@@ -100,6 +100,7 @@ export default function HomePage() {
           title: todo.title,
           snippet: [todo.department, todo.contactPerson, todo.remarks].filter(Boolean).join(" · ") || "待办事项",
           dateLabel: todo.dueDate ? `截止 ${formatDateTime(todo.dueDate)}` : "未设置截止时间",
+          dateValue: todo.dueDate,
           tags: todo.tags,
           pinyin: toPinyin(text),
           initials: toPinyinInitials(text),
@@ -113,6 +114,7 @@ export default function HomePage() {
           title: event.title,
           snippet: event.detail ?? "工作记录",
           dateLabel: formatDateTime(event.startTime),
+          dateValue: event.startTime,
           tags: event.tags,
           pinyin: toPinyin(text),
           initials: toPinyinInitials(text),
@@ -132,6 +134,7 @@ export default function HomePage() {
                 : "周期备忘"
               : htmlToText(memo.content ?? "").slice(0, 80) || "复盘心得",
           dateLabel: memo.date ? `备忘 ${memo.date}` : "备忘录",
+          dateValue: memo.date,
           tags: memo.tags,
           pinyin: toPinyin(text),
           initials: toPinyinInitials(text),
@@ -516,10 +519,10 @@ export default function HomePage() {
                   <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
                     <h2>搜索结果</h2>
                     <HelpIcon tips={[
-                      "输入关键词后自动搜索匹配的待办和工作记录。",
+                      "输入关键词后自动搜索匹配的待办、工作记录和备忘录。",
                       "搜索范围包括标题、内容和标签，支持拼音。",
-                      "结果按类型（待办 / 事件）分组显示。",
-                      "清空搜索框可恢复默认列表。",
+                      "可按类型和标签组合筛选，按日期或标题排序。",
+                      "日期为待办截止时间、记录开始时间或备忘日期；未设置日期的结果排在最后。",
                     ]} />
                   </div>
                 </div>

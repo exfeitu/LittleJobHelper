@@ -48,6 +48,8 @@ export type SearchResult = {
   title: string;
   snippet: string;
   dateLabel: string;
+  /** 搜索视图派生字段，不持久化；与 dateLabel 表示同一日期。 */
+  dateValue?: string;
   tags: string[];
 };
 

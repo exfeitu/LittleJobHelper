@@ -73,6 +73,44 @@
   gap: 14px;
 }
 
+.search-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 10px;
+}
+
+.search-controls label {
+  display: grid;
+  gap: 5px;
+  flex: 1 1 140px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.search-controls select {
+  width: 100%;
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid rgba(108, 156, 120, 0.25);
+  border-radius: 10px;
+  background: white;
+  color: var(--text);
+  font: inherit;
+}
+
+.search-controls select:focus-visible {
+  outline: 2px solid #6c9c78;
+  outline-offset: 2px;
+}
+
+.search-result-count {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
 .search-box input {
   width: 180px;
 }

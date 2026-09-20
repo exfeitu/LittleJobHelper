@@ -1,4 +1,6 @@
+import { useMemo, useState } from "react";
 import { SearchResult } from "@/types";
+import { filterAndSortResults, SearchSort } from "@/lib/search-results";
 
 type SearchPanelProps = {
   results: SearchResult[];
@@ -33,6 +35,13 @@ function highlight(text: string, query: string): React.ReactNode {
 }
 
 export function SearchPanel({ results, query, onQueryChange, inputRef }: SearchPanelProps) {
+  const [kind, setKind] = useState<SearchResult["kind"] | "all">("all");
+  const [tag, setTag] = useState("");
+  const [sort, setSort] = useState<SearchSort>("default");
+  const tags = useMemo(() => [...new Set([...results.flatMap((result) => result.tags), ...(tag ? [tag] : [])])]
+    .sort((a, b) => a.localeCompare(b, "zh-CN")), [results, tag]);
+  const visibleResults = useMemo(() => filterAndSortResults(results, kind, tag, sort), [results, kind, tag, sort]);
+  const hasFilters = kind !== "all" || tag !== "";
   const kindLabel = (kind: SearchResult["kind"]) => {
     if (kind === "todo") return "待办";
     if (kind === "event") return "工作记录";
@@ -50,9 +59,35 @@ export function SearchPanel({ results, query, onQueryChange, inputRef }: SearchP
           aria-label="搜索"
         />
       </div>
+      <div className="search-controls">
+        <label>类型
+          <select aria-label="搜索类型" value={kind} onChange={(event) => setKind(event.target.value as typeof kind)}>
+            <option value="all">全部类型</option>
+            <option value="todo">待办</option>
+            <option value="event">工作记录</option>
+            <option value="memo">备忘录</option>
+          </select>
+        </label>
+        <label>标签
+          <select aria-label="搜索标签" value={tag} onChange={(event) => setTag(event.target.value)}>
+            <option value="">全部标签</option>
+            {tags.map((value) => <option key={value} value={value}>{value}</option>)}
+          </select>
+        </label>
+        <label>排序
+          <select aria-label="搜索排序" value={sort} onChange={(event) => setSort(event.target.value as SearchSort)}>
+            <option value="default">默认顺序</option>
+            <option value="date-desc">日期从新到旧</option>
+            <option value="date-asc">日期从旧到新</option>
+            <option value="title">标题顺序</option>
+          </select>
+        </label>
+        {hasFilters || sort !== "default" ? <button type="button" className="button ghost" onClick={() => { setKind("all"); setTag(""); setSort("default"); }}>重置筛选与排序</button> : null}
+      </div>
+      {query.trim() ? <p className="search-result-count" role="status">显示 {visibleResults.length} / {results.length} 条结果</p> : null}
       <div className="search-results">
-        {results.length > 0 ? (
-          results.map((result) => (
+        {visibleResults.length > 0 ? (
+          visibleResults.map((result) => (
             <article key={result.id} className="search-card">
               <div className="search-card-top">
                 <span className={`pill pill-${result.kind}`}>{kindLabel(result.kind)}</span>
@@ -71,7 +106,7 @@ export function SearchPanel({ results, query, onQueryChange, inputRef }: SearchP
           ))
         ) : (
           <p style={{ color: "var(--muted)", textAlign: "center", padding: "20px 0" }}>
-            {query.trim() ? "未找到匹配结果" : "暂无数据"}
+            {query.trim() ? (results.length > 0 && hasFilters ? "没有符合筛选条件的结果，可重置筛选后查看全部匹配项" : "未找到匹配结果") : "输入关键词开始搜索"}
           </p>
         )}
       </div>
