@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useRef, useState } from "react";
-import { DayTimeline } from "@/components/day-timeline";
+import { TimelineSwitcher } from "@/components/timeline-switcher";
 import { DiaryTimeline } from "@/components/diary-timeline";
 import { SearchPanel } from "@/components/search-panel";
 import { TodoTree } from "@/components/todo-tree";
@@ -334,7 +334,7 @@ export default function HomePage() {
                     </button>
                   </div>
                 </div>
-                <DayTimeline events={events} todos={todos} onEventClick={setEditingEvent} onTodoClick={setEditingTodo} />
+                <TimelineSwitcher events={events} todos={todos} onEventClick={setEditingEvent} onTodoClick={setEditingTodo} />
               </article>
             </section>
 

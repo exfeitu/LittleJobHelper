@@ -30,6 +30,33 @@ async function loadFixture(page: Page, data = { events, todos }) {
 
 test.use({ viewport: { width: 1600, height: 1000 } });
 
+test("旧版完整时间轴可切换、缩放、跳转并编辑同一份数据", async ({ page }, info) => {
+  await page.clock.setFixedTime(new Date(`${date}T14:00:00`));
+  await loadFixture(page, { todos: [todos[0]], events: [events[0]] });
+  await expect(page.locator(".at-root")).toBeVisible();
+  await page.getByRole("button", { name: "切换到旧版时间轴", exact: true }).click();
+  const legacy = page.locator(".legacy-timeline");
+  await expect(legacy).toBeVisible();
+  await expect(page.locator(".at-root")).toHaveCount(0);
+  await legacy.getByLabel("旧版跳转日期").fill(date);
+  await expect(legacy.locator(".timeline-event-strip-button").filter({ hasText: "工作记录a" })).toBeVisible();
+  await legacy.getByRole("button", { name: "＋", exact: true }).click();
+  await expect(legacy.locator(".axis-zoom-value")).toHaveText("105%");
+  await legacy.screenshot({ path: info.outputPath("legacy-timeline.png") });
+  await legacy.locator(".timeline-event-strip-button").filter({ hasText: "工作记录a" }).click();
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "切换到新版时间轴", exact: true }).click();
+  await expect(page.locator(".at-root")).toBeVisible();
+  await expect(page.locator(".legacy-timeline")).toHaveCount(0);
+  await expect(page.locator(".at-heading")).toContainText("12 小时");
+  await expect(page.locator('.at-root [data-event-id="a"]')).toHaveCount(1);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole("button", { name: "切换到旧版时间轴", exact: true }).click();
+  await expect(legacy.locator(".line-timeline-shell")).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+});
+
 test("打开时按早班晚班自动定位，空日使用默认工作时段", async ({ page }) => {
   for (const [from, to, hour] of [["05:30", "14:00", 5.5], ["16:00", "23:00", 11], ["", "", 8]] as const) {
     await loadFixture(page, { todos: [], events: from ? [{ ...events[0], startTime: stamp(from), endTime: stamp(to) }] : [] });
