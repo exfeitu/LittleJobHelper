@@ -4,21 +4,23 @@ import { type CSSProperties, useCallback, useEffect, useLayoutEffect, useMemo, u
 import { EventItem, TodoItem } from "@/types";
 import {
   BASE_VISIBLE_DAYS,
+  CARD_HORIZONTAL_GAP,
+  FULL_CARD_MAX_WIDTH,
+  FULL_CARD_MIN_WIDTH,
+  LANE_HEIGHT,
   MAX_SCALE,
   MIN_SCALE,
   PRIORITY_LABEL,
   SCALE_STEP,
   STATUS_LABEL,
+  TRACK_PADDING,
   TimelineItem,
-  TASK_RAIL_PRIORITIES,
-  buildTimelineTaskRailItems,
+  assignLanes,
   buildWeekBrackets,
   endOfDay,
   eventToTimeline,
   formatClock,
   formatDayLabel,
-  getTimelineDensity,
-  layoutTimelineEventStrips,
   startOfDay,
   todoToTimeline,
 } from "@/lib/legacy-timeline-layout";
@@ -34,6 +36,16 @@ type LegacyDayTimelineProps = {
   onScaleChange?: (scale: number) => void;
   scrollToTodayTrigger?: number;
   scrollToDate?: string;
+};
+
+type PositionedItem = TimelineItem & {
+  color: string;
+  stack: number;
+  side: "top" | "bottom";
+  leftPercent: number;
+  widthPercent: number;
+  cardOffsetXPx: number;
+  cardWidthPx: number;
 };
 
 export function LegacyDayTimeline({ events, todos = [], linkedTodoTitles = {}, onEventClick, onTodoClick, scale: externalScale, onScaleChange, scrollToTodayTrigger, scrollToDate }: LegacyDayTimelineProps) {
@@ -64,7 +76,6 @@ export function LegacyDayTimeline({ events, todos = [], linkedTodoTitles = {}, o
   const scrollRef = useRef<HTMLDivElement>(null);
   const initializedRef = useRef(false);
   const [timelineReady, setTimelineReady] = useState(false);
-  const [expandedClusterId, setExpandedClusterId] = useState<string | null>(null);
 
   // 视口虚拟化：只渲染可视区域附近的元素
   const [viewportLeft, setViewportLeft] = useState(0);
@@ -180,13 +191,8 @@ export function LegacyDayTimeline({ events, todos = [], linkedTodoTitles = {}, o
   const totalRangeMs = timeEnd - timeOrigin;
 
   const visibleDays = BASE_VISIBLE_DAYS / scale;
-  const timelineDensity = getTimelineDensity(visibleDays);
   const totalDays = timelineDays.length;
   const shellWidth = Math.max((totalDays / visibleDays) * containerWidth, containerWidth);
-  const taskRailItems = useMemo(
-    () => buildTimelineTaskRailItems(todos, timelineDensity),
-    [todos, timelineDensity],
-  );
 
   // 缩放后统一调整 scroll 位置（useLayoutEffect 在 DOM 更新后、绘制前执行，消除闪烁）
   useLayoutEffect(() => {
@@ -245,35 +251,54 @@ export function LegacyDayTimeline({ events, todos = [], linkedTodoTitles = {}, o
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [targetDate]);
 
-  const eventStrips = useMemo(
-    () => layoutTimelineEventStrips(
-      events,
-      timeOrigin,
-      totalRangeMs,
-      shellWidth,
-      timelineDensity,
-    ),
-    [events, timeOrigin, totalRangeMs, shellWidth, timelineDensity],
+  // 不依赖 scale/shellWidth 的稳定计算（lane 分配、颜色、百分比位置）
+  const stableItems = useMemo(
+    () => assignLanes(allItems, timeOrigin, totalRangeMs),
+    [allItems, timeOrigin, totalRangeMs],
   );
 
-  const visibleTaskRailItems = useMemo(() => {
-    return taskRailItems.filter((item) => {
-      const anchorPx = totalRangeMs > 0
-        ? ((item.anchorMs - timeOrigin) / totalRangeMs) * shellWidth
-        : 0;
-      return anchorPx >= visibleRange.left - 160 && anchorPx <= visibleRange.right + 160;
-    });
-  }, [taskRailItems, timeOrigin, totalRangeMs, shellWidth, visibleRange]);
+  // 仅依赖 shellWidth 的像素计算（缩放时重算，稳定部分不变）
+  const positionedItems = useMemo<PositionedItem[]>(() => {
+    if (!stableItems.length) return [];
+    const laneRights = { top: [] as number[], bottom: [] as number[] };
 
-  const visibleEventStrips = useMemo(() => {
-    return eventStrips.filter((item) => {
-      const leftPx = (item.leftPercent / 100) * shellWidth;
-      const rightPx = leftPx + Math.max(item.labelWidthPx, item.durationWidthPx);
-      return rightPx >= visibleRange.left && leftPx <= visibleRange.right;
-    });
-  }, [eventStrips, shellWidth, visibleRange]);
+    return stableItems.map((item) => {
+      const naturalLeftPx = (item.leftPercent / 100) * shellWidth;
+      const naturalWidthPx = Math.max(40, (item.widthPercent / 100) * shellWidth);
+      const cardWidthPx = Math.min(FULL_CARD_MAX_WIDTH, Math.max(FULL_CARD_MIN_WIDTH, naturalWidthPx));
 
-  const trackHeight = 360;
+      const sameSideRight = laneRights[item.side][item.stack] ?? -Infinity;
+      const shiftedLeftPx = Math.max(naturalLeftPx, sameSideRight + CARD_HORIZONTAL_GAP);
+      const cardOffsetXPx = shiftedLeftPx - naturalLeftPx;
+
+      laneRights[item.side][item.stack] = shiftedLeftPx + cardWidthPx;
+
+      return {
+        ...item,
+        cardOffsetXPx,
+        cardWidthPx,
+      };
+    });
+  }, [stableItems, shellWidth]);
+
+  // 视口虚拟化：仅保留可见范围内的条目（memoized 避免每帧 filter）
+  const visiblePositionedItems = useMemo(() => {
+    if (!positionedItems.length) return [];
+    return positionedItems.filter((item) => {
+      const itemLeftPx = (item.leftPercent / 100) * shellWidth + item.cardOffsetXPx;
+      const itemRightPx = itemLeftPx + item.cardWidthPx;
+      return itemRightPx >= visibleRange.left && itemLeftPx <= visibleRange.right;
+    });
+  }, [positionedItems, shellWidth, visibleRange]);
+
+  const trackHeight = useMemo(() => {
+    const maxTop = stableItems.reduce((m, e) => (e.side === "top" ? Math.max(m, e.stack) : m), -1);
+    const maxBottom = stableItems.reduce((m, e) => (e.side === "bottom" ? Math.max(m, e.stack) : m), -1);
+    // 卡片需要足够纵向空间：stack 层高 + 卡片高度(~150px) + 边距
+    const cardClearance = 160;
+    const needed = (Math.max(maxTop, maxBottom) + 1) * LANE_HEIGHT * 2 + cardClearance * 2 + TRACK_PADDING * 2;
+    return Math.max(480, needed);
+  }, [stableItems]);
 
   // 按周聚合计数（以周一为周起始对齐）
   const weekBrackets = useMemo(() => buildWeekBrackets(allItems), [allItems]);
@@ -430,7 +455,7 @@ export function LegacyDayTimeline({ events, todos = [], linkedTodoTitles = {}, o
   );
 
   return (
-    <div className={`line-timeline line-timeline-density-${timelineDensity}`} suppressHydrationWarning>
+    <div className="line-timeline" suppressHydrationWarning>
       {!hasExternalToolbar && (
         <div className="line-timeline-toolbar">
           <input type="date" aria-label="旧版跳转日期" value={jumpDate} onChange={event => setJumpDate(event.target.value)} />
@@ -495,116 +520,66 @@ export function LegacyDayTimeline({ events, todos = [], linkedTodoTitles = {}, o
               return <div key={day} className="line-day-chip" style={{ left: `${dayLeftPercent}%` }}>{formatDayLabel(day)}</div>;
             })}
 
-            {/* 待办只作为轻量时间节点存在，优先级由纵向位置和颜色表达。 */}
-            <div className="timeline-task-layer" aria-label="待办优先级时间轨道">
-              {TASK_RAIL_PRIORITIES.map((priority) => (
-                <div key={priority} className={`timeline-task-row timeline-task-row-${priority}`}>
-                  <span className="timeline-task-row-label">
-                    <i aria-hidden="true" />
-                    {PRIORITY_LABEL[priority]}
-                  </span>
-                </div>
-              ))}
-              {visibleTaskRailItems.map((railItem) => {
-                const leftPercent = totalRangeMs > 0
-                  ? ((railItem.anchorMs - timeOrigin) / totalRangeMs) * 100
-                  : 0;
-                const anchorPx = (leftPercent / 100) * shellWidth;
-                const bucketWidthPx = totalRangeMs > 0
-                  ? ((railItem.bucketEndMs - railItem.bucketStartMs) / totalRangeMs) * shellWidth
-                  : 80;
-                const nodeWidthPx = Math.max(56, Math.min(136, bucketWidthPx - 10));
-                const isExpanded = expandedClusterId === railItem.id;
-                const firstTodo = railItem.todos[0];
-                const popoverWidthPx = Math.min(280, Math.max(180, containerWidth - 32));
-                const popoverLeftPx = Math.min(
-                  viewportLeft + containerWidth - 16 - popoverWidthPx,
-                  Math.max(viewportLeft + 16, anchorPx - popoverWidthPx / 2),
-                );
-                const nodeStyle = {
-                  left: `${leftPercent}%`,
-                  "--task-color": railItem.color,
-                  "--task-node-width": `${nodeWidthPx}px`,
-                  "--task-popover-width": `${popoverWidthPx}px`,
-                  "--task-popover-offset": `${popoverLeftPx - anchorPx}px`,
-                } as CSSProperties;
-
-                return (
-                  <article
-                    key={railItem.id}
-                    className={`timeline-task-node timeline-task-node-${railItem.priority}`}
-                    style={nodeStyle}
-                  >
-                    <button
-                      type="button"
-                      className={`timeline-task-node-button status-${firstTodo.status}`}
-                      title={railItem.todos.length === 1 ? railItem.title : `${railItem.todos.length} 项待办`}
-                      onClick={() => {
-                        if (railItem.todos.length === 1) {
-                          onTodoClick?.(firstTodo);
-                        } else {
-                          setExpandedClusterId((current) => current === railItem.id ? null : railItem.id);
-                        }
-                      }}
-                      aria-expanded={railItem.todos.length > 1 ? isExpanded : undefined}
-                    >
-                      <span className="timeline-task-node-dot" aria-hidden="true" />
-                      <span className="timeline-task-node-title">
-                        {railItem.todos.length > 1 ? `${railItem.todos.length} 项任务` : railItem.title}
-                      </span>
-                      {railItem.todos.length > 1 ? (
-                        <span className="timeline-task-node-count">{railItem.todos.length}</span>
-                      ) : null}
-                    </button>
-                    {railItem.todos.length > 1 && isExpanded ? (
-                      <div className="timeline-task-popover" role="dialog" aria-label={`${PRIORITY_LABEL[railItem.priority]}优先级待办`} onMouseDown={(event) => event.stopPropagation()}>
-                        <strong>{railItem.todos.length} 个{PRIORITY_LABEL[railItem.priority]}优先级待办</strong>
-                        {railItem.todos.map((todo) => (
-                          <button key={todo.id} type="button" onClick={() => { setExpandedClusterId(null); onTodoClick?.(todo); }}>
-                            <span>{todo.title}</span>
-                            <small>{todo.dueDate ? formatClock(todo.dueDate) : STATUS_LABEL[todo.status] ?? todo.status}</small>
-                          </button>
-                        ))}
-                      </div>
-                    ) : null}
-                  </article>
-                );
-              })}
-            </div>
-
-            {/* 工作记录直接显示为时间条：起点准确、持续时间可见，不再使用悬浮卡片。 */}
-            {visibleEventStrips.map((item) => {
-              const linkedCount = item.eventData.linkedTodoIds?.filter((id) => linkedTodoTitles[id]).length ?? 0;
-              const stripStyle = {
+            {/* 统一渲染时间轴条目（事件 + 待办）—— 使用 memoized 可见条目 */}
+            {visiblePositionedItems.map((item) => {
+              const isTodo = item.kind === "todo";
+              const style = {
                 left: `${item.leftPercent}%`,
+                width: `${item.widthPercent}%`,
                 "--event-color": item.color,
-                "--event-lane-offset": `${item.lane * 28}px`,
-                "--event-label-width": `${item.labelWidthPx}px`,
-                "--event-duration-width": `${item.durationWidthPx}px`,
+                "--stack-offset": `${item.stack * LANE_HEIGHT}px`,
+                "--card-offset-x": `${item.cardOffsetXPx}px`,
+                "--card-width": `${item.cardWidthPx}px`,
+                "--lane-height": `${LANE_HEIGHT}px`,
               } as CSSProperties;
+
+              const handleClick = () => {
+                if (isTodo && item.todoData && onTodoClick) {
+                  onTodoClick(item.todoData);
+                } else if (!isTodo && item.eventData && onEventClick) {
+                  onEventClick(item.eventData);
+                }
+              };
 
               return (
                 <article
-                  key={`event-${item.id}`}
-                  className="timeline-event-strip"
-                  style={stripStyle}
+                  key={`${item.kind}-${item.id}`}
+                  className={`line-event line-event-${item.side} ${isTodo ? "line-todo" : ""}`}
+                  style={style}
                 >
-                  <span className="timeline-event-duration" aria-hidden="true" />
+                  <div className="line-event-axis-group">
+                    <span className={`line-event-point ${isTodo ? "line-todo-point" : ""}`} />
+                    <span className="line-event-stem" />
+                  </div>
                   <button
-                    className="timeline-event-strip-button"
+                    className={`line-event-card ${isTodo ? "line-todo-card" : ""}`}
                     type="button"
-                    title={[
-                      `${formatClock(item.startTime)} — ${formatClock(item.endTime)}`,
-                      item.title,
-                      item.eventData.detail,
-                    ].filter(Boolean).join("\n")}
-                    onClick={() => onEventClick?.(item.eventData)}
+                    onClick={handleClick}
                   >
-                    <span className="timeline-event-strip-time">{formatClock(item.startTime)}</span>
-                    <strong>{item.title}</strong>
-                    {linkedCount > 0 ? (
-                      <span className="timeline-event-link-count">↗{linkedCount}</span>
+                    <div className="line-event-time">
+                      {isTodo ? "📌 待办" : `${formatClock(item.startTime)} — ${formatClock(item.endTime)}`}
+                    </div>
+                    {!isTodo && item.eventData?.linkedTodoIds?.length ? (
+                      <div className="link-badge-group link-badge-group-event">
+                        {item.eventData.linkedTodoIds.filter((id) => linkedTodoTitles[id]).map((id) => (
+                          <div key={id} className="link-badge link-badge-event">关联待办：{linkedTodoTitles[id]}</div>
+                        ))}
+                      </div>
                     ) : null}
+                    <h4>{item.title}</h4>
+                    {isTodo && item.todoData ? (
+                      <div className="line-todo-meta">
+                        <span className={`line-todo-priority priority-${item.todoData.priority}`}>
+                          {PRIORITY_LABEL[item.todoData.priority] ?? item.todoData.priority}
+                        </span>
+                        <span className="line-todo-status">{STATUS_LABEL[item.todoData.status] ?? item.todoData.status}</span>
+                      </div>
+                    ) : (
+                      <p>{item.detail}</p>
+                    )}
+                    <div className="tag-row compact-tags">
+                      {item.tags.map((tag) => <span key={tag} className="tag chip">{tag}</span>)}
+                    </div>
                   </button>
                 </article>
               );
