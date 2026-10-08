@@ -1,0 +1,7 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>工作台账 · 正在跳转</title></head><body><p>工作台账已迁移。<a id="destination" href="/WorkLedger/">点击继续</a></p><script>
+const prefix = '/LittleJobHelper';
+const suffix = location.pathname.startsWith(prefix + '/') ? location.pathname.slice(prefix.length) : '/';
+const destination = '/WorkLedger' + suffix + location.search + location.hash;
+document.getElementById('destination').href = destination;
+location.replace(destination);
+</script></body></html>
